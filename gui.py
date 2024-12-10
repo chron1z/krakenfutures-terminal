@@ -128,6 +128,19 @@ class DataFetchThread(QThread):
 class KrakenTerminal(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.light_theme = {
+            'background': 'white',
+            'text': 'black',
+            'button': 'lightgray',
+            'window': 'white'
+        }
+        self.dark_theme = {
+            'background': '#2b2b2b',
+            'text': '#e0e0e0',
+            'button': '#404040',
+            'window': '#1e1e1e'
+        }
+        self.is_dark_mode = False
         self.exchange = ccxt.krakenfutures({
             'apiKey': KRAKEN_API_KEY,
             'secret': KRAKEN_API_SECRET,
@@ -161,6 +174,11 @@ class KrakenTerminal(QMainWindow):
         self.connection_status_label.setFixedSize(20, 20)
         self.update_connection_status(False)
 
+        self.theme_button = QPushButton('🌙')
+        self.theme_button.setFixedSize(30, 30)
+        self.theme_button.setFont(QFont('Arial', 12))
+        self.theme_button.clicked.connect(self.toggle_theme)
+
         self.volume_timer = QTimer()
         self.volume_timer.timeout.connect(self.update_volume_display)
         self.volume_timer.start(1000)
@@ -169,7 +187,7 @@ class KrakenTerminal(QMainWindow):
 
     def init_ui(self):
         self.setWindowTitle('Kraken Terminal')
-        self.setGeometry(100, 100, 800, 600)
+        self.setGeometry(100, 100, 600, 100)  # Smaller initial size
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -177,6 +195,7 @@ class KrakenTerminal(QMainWindow):
 
         default_font = QFont('Arial', GUI_FONT_SIZE)
 
+        # Initially visible elements
         pair_layout = QHBoxLayout()
         pair_layout.addWidget(self.connection_status_label)
         pair_label = QLabel('Trading Pair:', font=default_font)
@@ -189,6 +208,10 @@ class KrakenTerminal(QMainWindow):
         self.confirm_button.clicked.connect(self.on_confirm)
         pair_layout.addWidget(self.confirm_button)
         self.main_layout.addLayout(pair_layout)
+
+        # Hidden content
+        self.hidden_content = QWidget()
+        hidden_layout = QVBoxLayout(self.hidden_content)
 
         order_layout = QVBoxLayout()
         self.usd_value_layout = QHBoxLayout()
@@ -241,15 +264,15 @@ class KrakenTerminal(QMainWindow):
         self.place_order_button = QPushButton('Place Order', font=default_font)
         self.place_order_button.clicked.connect(self.place_order)
         order_layout.addWidget(self.place_order_button)
-        self.main_layout.addLayout(order_layout)
+        hidden_layout.addLayout(order_layout)
 
         self.close_orders_button = QPushButton('Close All Orders', font=default_font)
         self.close_orders_button.clicked.connect(self.close_all_orders)
-        self.main_layout.addWidget(self.close_orders_button)
+        hidden_layout.addWidget(self.close_orders_button)
 
         self.fast_exit_button = QPushButton('Fast Exit', font=default_font)
         self.fast_exit_button.clicked.connect(self.fast_exit)
-        self.main_layout.addWidget(self.fast_exit_button)
+        hidden_layout.addWidget(self.fast_exit_button)
 
         self.data_window = QWidget()
         data_layout = QVBoxLayout(self.data_window)
@@ -287,14 +310,67 @@ class KrakenTerminal(QMainWindow):
         self.recent_trades_display.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         data_layout.addWidget(self.recent_trades_display)
 
-        self.main_layout.addWidget(self.data_window)
-        self.data_window.hide()
+        hidden_layout.addWidget(self.data_window)
+
+        # Theme button at bottom
+        bottom_layout = QHBoxLayout()
+        bottom_layout.addWidget(self.theme_button)
+        bottom_layout.addStretch()
+        hidden_layout.addLayout(bottom_layout)
+
+        self.main_layout.addWidget(self.hidden_content)
+        self.hidden_content.hide()
+
+    def toggle_theme(self):
+        self.is_dark_mode = not self.is_dark_mode
+        theme = self.dark_theme if self.is_dark_mode else self.light_theme
+
+        # Get current last price color
+        current_style = self.last_price_label.styleSheet()
+        if 'color: green' in current_style:
+            last_price_color = 'green'
+        elif 'color: red' in current_style:
+            last_price_color = 'red'
+        else:
+            last_price_color = theme['text']
+
+        # Set the last price label color
+        self.last_price_label.setStyleSheet(f'color: {last_price_color}')
+        self.setStyleSheet(f"""
+            QMainWindow, QWidget {{
+                background-color: {theme['background']};
+                color: {theme['text']};
+            }}
+            QPushButton {{
+                background-color: {theme['button']};
+                color: {theme['text']};
+                border: 1px solid {theme['text']};
+                padding: 5px;
+            }}
+            QLineEdit {{
+                background-color: {theme['window']};
+                color: {theme['text']};
+                border: 1px solid {theme['text']};
+                padding: 5px;
+            }}
+            QTextEdit {{
+                background-color: {theme['window']};
+                color: {theme['text']};
+                border: 1px solid {theme['text']};
+            }}
+            QLabel {{
+                color: {theme['text']};
+            }}
+        """)
+
+        self.theme_button.setText('☀️' if self.is_dark_mode else '🌙')
 
     def update_connection_status(self, is_connected):
         color = "green" if is_connected else "red"
         self.connection_status_label.setStyleSheet(
             f"background-color: {color}; border-radius: 10px;"
         )
+
 
     def on_confirm(self):
         try:
@@ -340,9 +416,10 @@ class KrakenTerminal(QMainWindow):
                 self.ws_thread.index_signal.connect(self.update_index_price)
                 self.ws_thread.error_signal.connect(lambda: self.update_connection_status(False))
                 self.ws_thread.start()
-                self.data_window.show()
+                self.hidden_content.show()
                 self.update_connection_status(True)
                 print(f"Data thread and WebSocket thread started for symbol: {symbol}")
+                self.setGeometry(100, 100, 800, 600)  # Full size when content loads
         except Exception as e:
             print(f"Error in on_confirm: {str(e)}")
             print(traceback.format_exc())
@@ -484,7 +561,7 @@ class KrakenTerminal(QMainWindow):
             elif price < self.previous_last_price:
                 self.last_price_label.setStyleSheet('color: red')
             else:
-                self.last_price_label.setStyleSheet('color: black')
+                self.last_price_label.setStyleSheet(f'color: {self.dark_theme["text"] if self.is_dark_mode else self.light_theme["text"]}')
         self.previous_last_price = price
 
     def update_ticker(self, data):
