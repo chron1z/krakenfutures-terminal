@@ -18,3 +18,4 @@ Perfect for traders who need quick market access without the complexity of full-
 
 Built with Python using ccxt for exchange connectivity and PyQt5 for the user interface.
 
+![screenshot](krakenTerminal.png)
