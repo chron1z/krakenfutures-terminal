@@ -12,7 +12,8 @@ Features:
 - Recent trades display
 - Bulk order cancellation
 - Connection status indicator
+- Dark mode
 
-Built with Python using ccxt for exchange connectivity and PyQt5 for the user interface.
+Using ccxt for exchange connectivity, PyQt5 for user interface
 
-![screenshot](krakenTerminal.png)
+![image](https://github.com/user-attachments/assets/9498e637-fc12-42e3-8b1d-bc21af4371f7)
