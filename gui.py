@@ -279,7 +279,7 @@ class KrakenTerminal(QMainWindow):
         self.close_orders_button.clicked.connect(self.close_all_orders)
         hidden_layout.addWidget(self.close_orders_button)
 
-        self.fast_exit_button = QPushButton('Fast Exit', font=default_font)
+        self.fast_exit_button = QPushButton('Market Close Position', font=default_font)
         self.fast_exit_button.clicked.connect(self.fast_exit)
         hidden_layout.addWidget(self.fast_exit_button)
 
