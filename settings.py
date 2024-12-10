@@ -1,0 +1,3 @@
+KRAKEN_API_KEY = 'api-key'
+KRAKEN_API_SECRET = 'api-secret'
+GUI_FONT_SIZE = 22
