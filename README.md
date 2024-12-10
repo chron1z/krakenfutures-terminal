@@ -16,9 +16,8 @@ Features:
 
 Using ccxt for exchange connectivity, PyQt5 for user interface
 
+Usage:
+
+Add API credentials to settings.py and set font size as desired for your screen size Run main.py
+
 ![image](https://github.com/user-attachments/assets/9498e637-fc12-42e3-8b1d-bc21af4371f7)
-
-Usage: 
-
-Add API credentials to settings.py and set font size as desired for your screen size
-Run main.py
