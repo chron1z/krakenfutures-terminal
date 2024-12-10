@@ -171,6 +171,8 @@ class KrakenTerminal(QMainWindow):
         self.one_minute_volume_usd = 0
         self.volume_label = QLabel()
         self.volume_label.setFont(QFont('Arial', GUI_FONT_SIZE))
+        self.balance_label = QLabel()
+        self.balance_label.setFont(QFont('Arial', GUI_FONT_SIZE))
         self.connection_status_label = QLabel()
         self.connection_status_label.setFixedSize(20, 20)
         self.update_connection_status(False)
@@ -183,6 +185,12 @@ class KrakenTerminal(QMainWindow):
         self.volume_timer = QTimer()
         self.volume_timer.timeout.connect(self.update_volume_display)
         self.volume_timer.start(1000)
+
+        self.balance_timer = QTimer()
+        self.balance_timer.timeout.connect(self.update_balance)
+        self.balance_timer.start(5000)  # Update every 5 seconds
+
+        self.margin_requirement = None
 
         self.init_ui()
 
@@ -317,6 +325,7 @@ class KrakenTerminal(QMainWindow):
         bottom_layout = QHBoxLayout()
         bottom_layout.addWidget(self.theme_button)
         bottom_layout.addStretch()
+        bottom_layout.addWidget(self.balance_label)
         hidden_layout.addLayout(bottom_layout)
 
         self.main_layout.addWidget(self.hidden_content)
@@ -378,6 +387,8 @@ class KrakenTerminal(QMainWindow):
 
             if symbol:
                 self.exchange.load_markets()
+                market = self.exchange.market(symbol)
+                self.margin_requirement = float(market['info']['marginLevels'][0]['initialMargin'])
                 self.get_tick_size()
 
                 if self.data_thread:
@@ -405,6 +416,17 @@ class KrakenTerminal(QMainWindow):
                 self.one_minute_volume_usd = 0
                 self.current_price = None
                 self.previous_last_price = None
+                self.order_type = None
+                self.selected_price = None
+                self.buy_button.setStyleSheet('')
+                self.sell_button.setStyleSheet('')
+                self.best_price_button.setStyleSheet('')
+                self.mid_price_button.setStyleSheet('')
+                self.market_price_button.setStyleSheet('')
+                self.price_button.setStyleSheet('')
+                self.price_input.hide()
+                self.volume_input.clear()
+                self.update_usd_value()
 
                 self.data_thread = DataFetchThread(self.exchange, symbol)
                 self.data_thread.data_signal.connect(self.update_ui)
@@ -425,9 +447,6 @@ class KrakenTerminal(QMainWindow):
                     if self.first_symbol:
                         self.setGeometry(100, 100, 800, 600)
                         self.first_symbol = False
-
-                self.volume_input.clear()  # Clear the volume input
-                self.update_usd_value()  # Force USD value update
 
         except Exception as e:
             print(f"Error in on_confirm: {str(e)}")
@@ -586,6 +605,9 @@ class KrakenTerminal(QMainWindow):
         self.mid_label.setText(f'Mid: {format_price(mid)}')
         self.spread_label.setText(f'Spread: {format_price(spread)} ({spread_percentage:.2f}%)')
 
+        # Add this line to update USD value on each ticker update
+        self.update_usd_value()
+
     def update_index_price(self, index_price):
         bid = float(self.bid_label.text().split(': ')[1]) if self.bid_label.text() else 0
         ask = float(self.ask_label.text().split(': ')[1]) if self.ask_label.text() else 0
@@ -679,6 +701,16 @@ class KrakenTerminal(QMainWindow):
         self.update_selected_price()
         self.update_usd_value()
 
+    def update_balance(self):
+        try:
+            balance = self.exchange.fetch_balance()
+            flex_account = balance['info']['accounts']['flex']
+            available_margin = float(flex_account['availableMargin'])
+            total_balance = float(flex_account['balanceValue'])
+            self.balance_label.setText(f'Free Margin: ${available_margin:.2f} | Balance: ${total_balance:.2f}')
+        except Exception as e:
+            print(f"Error fetching balance: {e}")
+
     def update_selected_price(self):
         try:
             self.selected_price = float(self.price_input.text())
@@ -697,18 +729,18 @@ class KrakenTerminal(QMainWindow):
                 else:
                     price = float(self.bid_label.text().split(': ')[1])
             else:
-                # Use mid price for USD value calculation
                 bid = float(self.bid_label.text().split(': ')[1])
                 ask = float(self.ask_label.text().split(': ')[1])
                 price = (bid + ask) / 2
 
             usd_value = quantity * price
+            required_margin = usd_value * self.margin_requirement if self.margin_requirement else 0
 
             if hasattr(self, 'usd_value_label'):
                 self.usd_value_layout.removeWidget(self.usd_value_label)
                 self.usd_value_label.deleteLater()
 
-            self.usd_value_label = QLabel(f'${format_price(usd_value)}')
+            self.usd_value_label = QLabel(f'${usd_value:.2f} | Margin: ${required_margin:.2f}')
             self.usd_value_label.setFont(QFont('Arial', GUI_FONT_SIZE))
             self.usd_value_layout.addWidget(self.usd_value_label)
 
@@ -716,7 +748,7 @@ class KrakenTerminal(QMainWindow):
             if hasattr(self, 'usd_value_label'):
                 self.usd_value_layout.removeWidget(self.usd_value_label)
                 self.usd_value_label.deleteLater()
-            self.usd_value_label = QLabel('$0.00')
+            self.usd_value_label = QLabel('$0.00 | Margin: $0.00')
             self.usd_value_label.setFont(QFont('Arial', GUI_FONT_SIZE))
             self.usd_value_layout.addWidget(self.usd_value_label)
         except Exception as e:
