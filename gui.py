@@ -164,6 +164,7 @@ class KrakenTerminal(QMainWindow):
         self.data_thread = None
         self.ws_thread = None
         self.current_price = None
+        self.first_symbol = True
         self.recent_trades = []
         self.recent_trades_for_volume = deque(maxlen=1000)
         self.one_minute_volume = 0
@@ -186,8 +187,8 @@ class KrakenTerminal(QMainWindow):
         self.init_ui()
 
     def init_ui(self):
-        self.setWindowTitle('Kraken Terminal')
-        self.setGeometry(100, 100, 600, 100)  # Smaller initial size
+        self.setWindowTitle('KrakenFutures Terminal')
+        self.setGeometry(100, 100, 600, 100)  # Compact initial size
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -202,7 +203,7 @@ class KrakenTerminal(QMainWindow):
         pair_layout.addWidget(pair_label)
         self.pair_input = QLineEdit()
         self.pair_input.setFont(default_font)
-        self.pair_input.setText("BONKUSD")
+        self.pair_input.setText("XBTUSD")
         pair_layout.addWidget(self.pair_input)
         self.confirm_button = QPushButton('Confirm', font=default_font)
         self.confirm_button.clicked.connect(self.on_confirm)
@@ -371,10 +372,10 @@ class KrakenTerminal(QMainWindow):
             f"background-color: {color}; border-radius: 10px;"
         )
 
-
     def on_confirm(self):
         try:
             symbol = get_full_symbol(self.pair_input.text())
+
             if symbol:
                 self.exchange.load_markets()
                 self.get_tick_size()
@@ -419,7 +420,15 @@ class KrakenTerminal(QMainWindow):
                 self.hidden_content.show()
                 self.update_connection_status(True)
                 print(f"Data thread and WebSocket thread started for symbol: {symbol}")
-                self.setGeometry(100, 100, 800, 600)  # Full size when content loads
+
+                if symbol:
+                    if self.first_symbol:
+                        self.setGeometry(100, 100, 800, 600)
+                        self.first_symbol = False
+
+                self.volume_input.clear()  # Clear the volume input
+                self.update_usd_value()  # Force USD value update
+
         except Exception as e:
             print(f"Error in on_confirm: {str(e)}")
             print(traceback.format_exc())
@@ -561,7 +570,8 @@ class KrakenTerminal(QMainWindow):
             elif price < self.previous_last_price:
                 self.last_price_label.setStyleSheet('color: red')
             else:
-                self.last_price_label.setStyleSheet(f'color: {self.dark_theme["text"] if self.is_dark_mode else self.light_theme["text"]}')
+                self.last_price_label.setStyleSheet(
+                    f'color: {self.dark_theme["text"] if self.is_dark_mode else self.light_theme["text"]}')
         self.previous_last_price = price
 
     def update_ticker(self, data):
@@ -686,10 +696,11 @@ class KrakenTerminal(QMainWindow):
                     price = float(self.ask_label.text().split(': ')[1])
                 else:
                     price = float(self.bid_label.text().split(': ')[1])
-            elif self.current_price:
-                price = self.current_price
             else:
-                price = 0
+                # Use mid price for USD value calculation
+                bid = float(self.bid_label.text().split(': ')[1])
+                ask = float(self.ask_label.text().split(': ')[1])
+                price = (bid + ask) / 2
 
             usd_value = quantity * price
 
@@ -750,7 +761,8 @@ class KrakenTerminal(QMainWindow):
                         params={'postOnly': True}
                     )
 
-                print(f"{'Market' if is_market else 'Limit'} {self.order_type} order placed for {pair}: volume {volume}")
+                print(
+                    f"{'Market' if is_market else 'Limit'} {self.order_type} order placed for {pair}: volume {volume}")
                 if not is_market:
                     print(f"Price: {format_price(self.selected_price)}")
                 print(f"Order details: {order}")
@@ -807,4 +819,3 @@ class KrakenTerminal(QMainWindow):
             self.ws_thread.stop()
             self.ws_thread.wait()
         event.accept()
-
