@@ -1,7 +1,7 @@
 # krakenfutures-terminal
 A lightweight, real-time trading terminal for Kraken Futures.
 
-Key Features:
+Features:
 
 - Low memory, lightweight application
 - Real-time WebSocket price data and order book updates
@@ -12,9 +12,6 @@ Key Features:
 - Recent trades display
 - Bulk order cancellation
 - Connection status indicator
-
-The terminal focuses on speed and efficiency, displaying all crucial trading information in a single window while maintaining a clean, uncluttered interface. 
-Perfect for traders who need quick market access without the complexity of full-featured trading platforms.
 
 Built with Python using ccxt for exchange connectivity and PyQt5 for the user interface.
 
