@@ -29,3 +29,10 @@ Changelog:
 - Added customizable data throttling for websockets
 
 ![image](https://github.com/user-attachments/assets/80b02291-479b-4142-9884-259014909bba)
+
+
+DISCLAIMER:
+This software is for informational purposes only. Use at your own risk. 
+The authors and contributors are not responsible for any trading losses, damages or other issues that may occur when using this terminal. 
+Always verify order details before trading and never risk more than you can afford to lose.
+
