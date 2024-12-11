@@ -2,6 +2,7 @@ KRAKEN_API_KEY = 'api-key'
 KRAKEN_API_SECRET = 'api-secret'
 GUI_FONT_SIZE = 22
 QUICK_SWAP_TICKERS = ['XBTUSD', 'ETHUSD', 'SOLUSD', 'BONKUSD', 'CRVUSD']
+BOOK_UPDATE_THROTTLE = '0'
 
 
 def save_settings(setting_name, value):
