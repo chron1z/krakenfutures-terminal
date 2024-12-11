@@ -27,4 +27,4 @@ Changelog:
 - Added ARM button
 - Added customizable ticker quick-swap bar
 
-![image](https://github.com/user-attachments/assets/9498e637-fc12-42e3-8b1d-bc21af4371f7)
+![image](https://github.com/user-attachments/assets/80b02291-479b-4142-9884-259014909bba)
