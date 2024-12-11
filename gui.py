@@ -26,28 +26,38 @@ class WebSocketThread(QThread):
         self.symbol = symbol
         self.ws = None
         self.running = True
+        self.last_ping = time.time()
+        self.ping_interval = 30
 
     def run(self):
         def on_message(ws, message):
+            if not message.startswith('{'):
+                return
+
             try:
                 data = json.loads(message)
-                if data.get('feed') == 'trade' and data.get('price') and data.get('qty'):
-                    trade = {
-                        'time': data.get('time', int(time.time() * 1000)),
-                        'side': data.get('side', 'unknown'),
-                        'price': data.get('price', 0),
-                        'amount': data.get('qty', 0)
-                    }
-                    self.trade_signal.emit(trade)
-                    self.last_price_signal.emit(float(data.get('price', 0)))
-                elif data.get('feed') == 'ticker' and data.get('bid') and data.get('ask'):
+                feed = data.get('feed')
+
+                if feed == 'trade':
+                    if all(key in data for key in ('price', 'qty')):
+                        trade = {
+                            'time': data.get('time', int(time.time() * 1000)),
+                            'side': data.get('side', 'unknown'),
+                            'price': data.get('price', 0),
+                            'amount': data.get('qty', 0)
+                        }
+                        self.trade_signal.emit(trade)
+                        self.last_price_signal.emit(float(data['price']))
+
+                elif feed == 'ticker' and 'bid' in data and 'ask' in data:
                     ticker_data = {
-                        'bid': float(data.get('bid', 0)),
-                        'ask': float(data.get('ask', 0))
+                        'bid': float(data['bid']),
+                        'ask': float(data['ask'])
                     }
                     self.ticker_signal.emit(ticker_data)
-                    if data.get('markPrice'):
-                        self.index_signal.emit(float(data.get('markPrice')))
+                    if 'markPrice' in data:
+                        self.index_signal.emit(float(data['markPrice']))
+
             except Exception as e:
                 print(f"Error processing message: {e}")
 
@@ -79,17 +89,20 @@ class WebSocketThread(QThread):
 
         while self.running:
             try:
-                self.ws = websocket.WebSocketApp("wss://futures.kraken.com/ws/v1",
-                                                 on_message=on_message,
-                                                 on_error=on_error,
-                                                 on_close=on_close)
-                self.ws.on_open = on_open
-                self.ws.run_forever()
+                self.ws = websocket.WebSocketApp(
+                    "wss://futures.kraken.com/ws/v1",
+                    on_message=on_message,
+                    on_error=on_error,
+                    on_close=on_close,
+                    on_open=on_open
+                )
+                self.ws.run_forever(ping_interval=self.ping_interval)
                 if not self.running:
                     break
+                time.sleep(5)
             except Exception as e:
                 print(f"WebSocket connection error: {e}")
-                time.sleep(1)
+                time.sleep(5)
 
     def stop(self):
         self.running = False
