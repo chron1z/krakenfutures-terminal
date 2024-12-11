@@ -471,11 +471,6 @@ class KrakenTerminal(QMainWindow):
             symbol = get_full_symbol(self.pair_input.text())
 
             if symbol:
-                self.exchange.load_markets()
-                market = self.exchange.market(symbol)
-                self.margin_requirement = float(market['info']['marginLevels'][0]['initialMargin'])
-                self.get_tick_size()
-
                 if self.data_thread:
                     self.data_thread.stop()
                     self.data_thread.wait()
@@ -494,6 +489,9 @@ class KrakenTerminal(QMainWindow):
                 self.separator.hide()
                 self.order_separator.hide()
                 self.volume_label.setText('')
+                self.recent_trades_display.clear()
+                self.recent_trades = []
+                self.recent_trades_for_volume.clear()
                 self.one_minute_volume = 0
                 self.one_minute_volume_usd = 0
                 self.current_price = None
@@ -506,17 +504,20 @@ class KrakenTerminal(QMainWindow):
                 self.mid_price_button.setStyleSheet('')
                 self.market_price_button.setStyleSheet('')
                 self.price_button.setStyleSheet('')
-                self.place_order_button.setEnabled(False)
-                self.close_orders_button.setEnabled(False)
-                self.fast_exit_button.setEnabled(False)
                 self.price_input.hide()
                 self.volume_input.clear()
                 self.update_usd_value()
+
+                self.exchange.load_markets()
+                market = self.exchange.market(symbol)
+                self.margin_requirement = float(market['info']['marginLevels'][0]['initialMargin'])
+                self.get_tick_size()
 
                 self.data_thread = DataFetchThread(self.exchange, symbol)
                 self.data_thread.data_signal.connect(self.update_ui)
                 self.data_thread.error_signal.connect(lambda: self.update_connection_status(False))
                 self.data_thread.start()
+
                 self.ws_thread = WebSocketThread(symbol)
                 self.ws_thread.trade_signal.connect(self.update_recent_trades)
                 self.ws_thread.last_price_signal.connect(self.update_last_price)
@@ -524,12 +525,10 @@ class KrakenTerminal(QMainWindow):
                 self.ws_thread.index_signal.connect(self.update_index_price)
                 self.ws_thread.error_signal.connect(lambda: self.update_connection_status(False))
                 self.ws_thread.start()
+
                 self.hidden_content.show()
                 self.update_connection_status(True)
                 print(f"Data thread and WebSocket thread started for symbol: {symbol}")
-                self.recent_trades_display.clear()
-                self.recent_trades = []
-                self.recent_trades_for_volume.clear()
 
                 if symbol:
                     if self.first_symbol:
