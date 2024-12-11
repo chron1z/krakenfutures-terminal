@@ -225,10 +225,6 @@ class KrakenTerminal(QMainWindow):
         self.volume_timer.timeout.connect(self.update_volume_display)
         self.volume_timer.start(1000)
 
-        self.balance_timer = QTimer()
-        self.balance_timer.timeout.connect(self.update_balance)
-        self.balance_timer.start(5000)  # Update every 5 seconds
-
         self.margin_requirement = None
 
         self.init_ui()
