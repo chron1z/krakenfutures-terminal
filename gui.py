@@ -4,7 +4,7 @@ from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer
 from PyQt5.QtGui import QFont
 import ccxt
 import traceback
-from settings import KRAKEN_API_KEY, KRAKEN_API_SECRET, GUI_FONT_SIZE, QUICK_SWAP_TICKERS, save_settings
+from settings import KRAKEN_API_KEY, KRAKEN_API_SECRET, GUI_FONT_SIZE, QUICK_SWAP_TICKERS, save_settings, BOOK_UPDATE_THROTTLE
 from helpers import format_price, round_to_tick, calculate_adjusted_mid, get_full_symbol, get_user_position, \
     get_open_orders
 from datetime import datetime
@@ -17,7 +17,7 @@ from collections import deque
 class WebSocketThread(QThread):
     trade_signal = pyqtSignal(dict)
     last_price_signal = pyqtSignal(float)
-    ticker_signal = pyqtSignal(dict)
+    book_signal = pyqtSignal(dict)
     index_signal = pyqtSignal(float)
     error_signal = pyqtSignal()
 
@@ -26,15 +26,17 @@ class WebSocketThread(QThread):
         self.symbol = symbol
         self.ws = None
         self.running = True
-        self.last_ping = time.time()
+        self.orderbook = {'bids': {}, 'asks': {}}
+        self.last_book_update = 0
+        self.book_throttle = BOOK_UPDATE_THROTTLE
         self.ping_interval = 30
 
     def run(self):
         def on_message(ws, message):
-            if not message.startswith('{'):
-                return
-
             try:
+                if not message.startswith('{'):
+                    return
+
                 data = json.loads(message)
                 feed = data.get('feed')
 
@@ -43,20 +45,36 @@ class WebSocketThread(QThread):
                         trade = {
                             'time': data.get('time', int(time.time() * 1000)),
                             'side': data.get('side', 'unknown'),
-                            'price': data.get('price', 0),
-                            'amount': data.get('qty', 0)
+                            'price': float(data.get('price', 0)),
+                            'amount': float(data.get('qty', 0))
                         }
                         self.trade_signal.emit(trade)
                         self.last_price_signal.emit(float(data['price']))
 
-                elif feed == 'ticker' and 'bid' in data and 'ask' in data:
-                    ticker_data = {
-                        'bid': float(data['bid']),
-                        'ask': float(data['ask'])
-                    }
-                    self.ticker_signal.emit(ticker_data)
+                elif feed == 'ticker':
                     if 'markPrice' in data:
                         self.index_signal.emit(float(data['markPrice']))
+
+                elif feed == 'book_snapshot':
+                    self.orderbook = {'bids': {}, 'asks': {}}
+                    for bid in data.get('bids', []):
+                        self.orderbook['bids'][float(bid[0])] = float(bid[1])
+                    for ask in data.get('asks', []):
+                        self.orderbook['asks'][float(ask[0])] = float(ask[1])
+                    self.emit_book_update()
+
+                elif feed == 'book':
+                    if all(key in data for key in ('side', 'price', 'qty')):
+                        side = 'bids' if data['side'] == 'buy' else 'asks'
+                        price = float(data['price'])
+                        size = float(data['qty'])
+
+                        if size == 0:
+                            self.orderbook[side].pop(price, None)
+                        else:
+                            self.orderbook[side][price] = size
+
+                        self.emit_book_update()
 
             except Exception as e:
                 print(f"Error processing message: {e}")
@@ -73,6 +91,11 @@ class WebSocketThread(QThread):
         def on_open(ws):
             print("WebSocket connection opened")
             subscribe_messages = [
+                {
+                    "event": "subscribe",
+                    "feed": "book",
+                    "product_ids": [self.symbol]
+                },
                 {
                     "event": "subscribe",
                     "feed": "trade",
@@ -109,16 +132,31 @@ class WebSocketThread(QThread):
         if self.ws:
             self.ws.close()
 
+    def emit_book_update(self):
+        current_time = time.time() * 1000
+        if current_time - self.last_book_update > int(self.book_throttle):
+            if self.orderbook['bids'] and self.orderbook['asks']:
+                best_bid = max(self.orderbook['bids'].keys())
+                best_ask = min(self.orderbook['asks'].keys())
+                self.book_signal.emit({
+                    'bid': best_bid,
+                    'ask': best_ask
+                })
+                self.last_book_update = current_time
+
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
+        from importlib import reload
+        import settings
+        reload(settings)
+
         self.setWindowTitle('Settings')
         layout = QVBoxLayout()
 
         self.ticker_inputs = []
-
-        for i, ticker in enumerate(QUICK_SWAP_TICKERS):
+        for i, ticker in enumerate(settings.QUICK_SWAP_TICKERS):
             ticker_layout = QHBoxLayout()
             label = QLabel(f'Quick Swap {i + 1}:')
             ticker_input = QLineEdit()
@@ -128,18 +166,24 @@ class SettingsDialog(QDialog):
             ticker_layout.addWidget(ticker_input)
             layout.addLayout(ticker_layout)
 
+        throttle_layout = QHBoxLayout()
+        throttle_label = QLabel('Book Update Interval (ms):')
+        self.throttle_input = QLineEdit()
+        self.throttle_input.setText(str(settings.BOOK_UPDATE_THROTTLE))
+        throttle_layout.addWidget(throttle_label)
+        throttle_layout.addWidget(self.throttle_input)
+        layout.addLayout(throttle_layout)
+
         save_button = QPushButton('Save')
         save_button.clicked.connect(self.save_and_close)
         layout.addWidget(save_button)
-
         self.setLayout(layout)
 
     def save_and_close(self):
-        print("Saving settings...")
         new_tickers = [input_field.text() for input_field in self.ticker_inputs]
-        print(f"New tickers: {new_tickers}")
+        new_throttle = int(self.throttle_input.text())
         save_settings('QUICK_SWAP_TICKERS', new_tickers)
-        print("Settings saved")
+        save_settings('BOOK_UPDATE_THROTTLE', int(new_throttle))
         self.accept()
 
 class DataFetchThread(QThread):
@@ -171,7 +215,6 @@ class DataFetchThread(QThread):
             except Exception as e:
                 print(f"Error fetching data: {str(e)}")
                 self.error_signal.emit()
-            self.msleep(427)
 
     def stop(self):
         self.running = False
@@ -468,6 +511,9 @@ class KrakenTerminal(QMainWindow):
             for i, ticker in enumerate(settings.QUICK_SWAP_TICKERS):
                 self.quick_swap_buttons[i].setText(ticker)
 
+            if self.ws_thread:
+                self.ws_thread.book_throttle = settings.BOOK_UPDATE_THROTTLE
+
     def on_confirm(self):
         try:
             symbol = get_full_symbol(self.pair_input.text())
@@ -523,7 +569,7 @@ class KrakenTerminal(QMainWindow):
                 self.ws_thread = WebSocketThread(symbol)
                 self.ws_thread.trade_signal.connect(self.update_recent_trades)
                 self.ws_thread.last_price_signal.connect(self.update_last_price)
-                self.ws_thread.ticker_signal.connect(self.update_ticker)
+                self.ws_thread.book_signal.connect(self.update_ticker)
                 self.ws_thread.index_signal.connect(self.update_index_price)
                 self.ws_thread.error_signal.connect(lambda: self.update_connection_status(False))
                 self.ws_thread.start()
@@ -556,6 +602,8 @@ class KrakenTerminal(QMainWindow):
 
     def update_ui(self, data):
         try:
+            self.setUpdatesEnabled(False)
+
             position = data['position']
             open_orders = data['open_orders']
             available_margin = data['available_margin']
@@ -605,6 +653,8 @@ class KrakenTerminal(QMainWindow):
         except Exception as e:
             print(f"Error in update_ui: {str(e)}")
             print(traceback.format_exc())
+        finally:
+            self.setUpdatesEnabled(True)
 
     def update_open_orders_display(self, open_orders):
         if open_orders:
@@ -704,8 +754,6 @@ class KrakenTerminal(QMainWindow):
         self.ask_label.setText(f'Ask: {format_price(ask)}')
         self.mid_label.setText(f'Mid: {format_price(mid)}')
         self.spread_label.setText(f'Spread: {format_price(spread)} ({spread_percentage:.2f}%)')
-
-        self.update_usd_value()
 
     def update_index_price(self, index_price):
         bid = float(self.bid_label.text().split(': ')[1]) if self.bid_label.text() else 0
