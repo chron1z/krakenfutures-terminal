@@ -1,10 +1,10 @@
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QLabel, QTextEdit, \
-    QFrame
+    QFrame, QDialog
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer
 from PyQt5.QtGui import QFont
 import ccxt
 import traceback
-from settings import KRAKEN_API_KEY, KRAKEN_API_SECRET, GUI_FONT_SIZE
+from settings import KRAKEN_API_KEY, KRAKEN_API_SECRET, GUI_FONT_SIZE, QUICK_SWAP_TICKERS, save_settings
 from helpers import format_price, round_to_tick, calculate_adjusted_mid, get_full_symbol, get_user_position, \
     get_open_orders
 from datetime import datetime
@@ -97,6 +97,38 @@ class WebSocketThread(QThread):
             self.ws.close()
 
 
+class SettingsDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle('Settings')
+        layout = QVBoxLayout()
+
+        self.ticker_inputs = []
+
+        for i, ticker in enumerate(QUICK_SWAP_TICKERS):
+            ticker_layout = QHBoxLayout()
+            label = QLabel(f'Quick Swap {i + 1}:')
+            ticker_input = QLineEdit()
+            ticker_input.setText(ticker)
+            self.ticker_inputs.append(ticker_input)
+            ticker_layout.addWidget(label)
+            ticker_layout.addWidget(ticker_input)
+            layout.addLayout(ticker_layout)
+
+        save_button = QPushButton('Save')
+        save_button.clicked.connect(self.save_and_close)
+        layout.addWidget(save_button)
+
+        self.setLayout(layout)
+
+    def save_and_close(self):
+        print("Saving settings...")
+        new_tickers = [input_field.text() for input_field in self.ticker_inputs]
+        print(f"New tickers: {new_tickers}")
+        save_settings('QUICK_SWAP_TICKERS', new_tickers)
+        print("Settings saved")
+        self.accept()
+
 class DataFetchThread(QThread):
     data_signal = pyqtSignal(dict)
     error_signal = pyqtSignal()
@@ -112,9 +144,16 @@ class DataFetchThread(QThread):
             try:
                 position = get_user_position(self.exchange, self.symbol)
                 open_orders = get_open_orders(self.exchange, self.symbol)
+                balance = self.exchange.fetch_balance()
+                flex_account = balance['info']['accounts']['flex']
+                available_margin = float(flex_account['availableMargin'])
+                total_balance = float(flex_account['balanceValue'])
+
                 self.data_signal.emit({
                     'position': position,
                     'open_orders': open_orders,
+                    'available_margin': available_margin,
+                    'total_balance': total_balance
                 })
             except Exception as e:
                 print(f"Error fetching data: {str(e)}")
@@ -205,6 +244,20 @@ class KrakenTerminal(QMainWindow):
         default_font = QFont('Arial', GUI_FONT_SIZE)
 
         # Initially visible elements
+
+        quick_swap_layout = QHBoxLayout()
+        self.quick_swap_buttons = []
+        for i in range(5):
+            button = QPushButton('', font=QFont('Arial', GUI_FONT_SIZE - 2))
+            button.setFixedHeight(30)
+            button.clicked.connect(lambda checked, x=i: self.quick_swap_clicked(x))
+            self.quick_swap_buttons.append(button)
+            quick_swap_layout.addWidget(button)
+
+        for i, ticker in enumerate(QUICK_SWAP_TICKERS):
+            self.quick_swap_buttons[i].setText(ticker)
+        self.main_layout.addLayout(quick_swap_layout)
+
         pair_layout = QHBoxLayout()
         pair_layout.addWidget(self.connection_status_label)
         pair_label = QLabel('Trading Pair:', font=default_font)
@@ -213,6 +266,7 @@ class KrakenTerminal(QMainWindow):
         self.pair_input.setFont(default_font)
         self.pair_input.setText("XBTUSD")
         pair_layout.addWidget(self.pair_input)
+
         self.confirm_button = QPushButton('Confirm', font=default_font)
         self.confirm_button.clicked.connect(self.on_confirm)
         pair_layout.addWidget(self.confirm_button)
@@ -325,6 +379,12 @@ class KrakenTerminal(QMainWindow):
         bottom_layout = QHBoxLayout()
         bottom_layout.addWidget(self.theme_button)
 
+        self.settings_button = QPushButton('⚙️')
+        self.settings_button.setFixedSize(30, 30)
+        self.settings_button.setFont(QFont('Arial', 14))
+        self.settings_button.clicked.connect(self.open_settings)
+        bottom_layout.addWidget(self.settings_button)
+
         self.arm_button = QPushButton('ARM')
         self.arm_button.setFixedSize(120, 30)  # Doubled width from 60 to 120
         self.arm_button.setFont(QFont('Arial', 14))  # Increased font from 12 to 14
@@ -338,6 +398,11 @@ class KrakenTerminal(QMainWindow):
 
         self.main_layout.addWidget(self.hidden_content)
         self.hidden_content.hide()
+
+    def quick_swap_clicked(self, button_index):
+        if self.quick_swap_buttons[button_index].text():
+            self.pair_input.setText(self.quick_swap_buttons[button_index].text())
+            self.on_confirm()
 
     def toggle_theme(self):
         self.is_dark_mode = not self.is_dark_mode
@@ -394,6 +459,17 @@ class KrakenTerminal(QMainWindow):
             f"background-color: {color}; border-radius: 10px;"
         )
 
+    def open_settings(self):
+        dialog = SettingsDialog(self)
+        if dialog.exec_():
+            # Reload settings from file
+            from importlib import reload
+            import settings
+            reload(settings)
+            # Update quick swap buttons with new values
+            for i, ticker in enumerate(settings.QUICK_SWAP_TICKERS):
+                self.quick_swap_buttons[i].setText(ticker)
+
     def on_confirm(self):
         try:
             symbol = get_full_symbol(self.pair_input.text())
@@ -422,9 +498,6 @@ class KrakenTerminal(QMainWindow):
                 self.separator.hide()
                 self.order_separator.hide()
                 self.volume_label.setText('')
-                self.recent_trades_display.clear()
-                self.recent_trades = []
-                self.recent_trades_for_volume.clear()
                 self.one_minute_volume = 0
                 self.one_minute_volume_usd = 0
                 self.current_price = None
@@ -458,6 +531,9 @@ class KrakenTerminal(QMainWindow):
                 self.hidden_content.show()
                 self.update_connection_status(True)
                 print(f"Data thread and WebSocket thread started for symbol: {symbol}")
+                self.recent_trades_display.clear()
+                self.recent_trades = []
+                self.recent_trades_for_volume.clear()
 
                 if symbol:
                     if self.first_symbol:
@@ -485,6 +561,10 @@ class KrakenTerminal(QMainWindow):
         try:
             position = data['position']
             open_orders = data['open_orders']
+            available_margin = data['available_margin']
+            total_balance = data['total_balance']
+
+            self.balance_label.setText(f'Free Margin: ${available_margin:.2f} | Balance: ${total_balance:.2f}')
 
             if position and position['contracts'] != 0:
                 entry_price = float(position['entryPrice'])
@@ -571,9 +651,9 @@ class KrakenTerminal(QMainWindow):
                 usd_value = amount * trade['price']
                 if amount >= 1000000:
                     amount = f"{amount / 1000000:.2f}M"
-                trade_line = f"<font color='{color}'>{timestamp} | {format_price(trade['price'])} | {amount} | ${usd_value:.2f}</font><br>"
+                trade_line = f"<font color='{color}'><b>{timestamp} | {format_price(trade['price']):<10} | {amount:<8} | ${usd_value:.2f}</b></font><br>"
                 trades_text += trade_line
-            self.recent_trades_display.setHtml(trades_text)
+            self.recent_trades_display.setHtml(f"<pre>{trades_text}</pre>")
 
     def update_volume_display(self):
         current_time = time.time()
