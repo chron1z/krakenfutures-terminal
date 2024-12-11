@@ -260,8 +260,7 @@ class KrakenTerminal(QMainWindow):
         self.ws_thread = None
         self.current_price = None
         self.first_symbol = True
-        self.recent_trades = deque(maxlen=10)
-        self.recent_trades_for_volume = deque(maxlen=1000)
+        self.recent_trades = deque(maxlen=1000)
         self.one_minute_volume = 0
         self.one_minute_volume_usd = 0
         self.volume_label = QLabel()
@@ -539,7 +538,6 @@ class KrakenTerminal(QMainWindow):
                 self.volume_label.setText('')
                 self.recent_trades_display.clear()
                 self.recent_trades = []
-                self.recent_trades_for_volume.clear()
                 self.one_minute_volume = 0
                 self.one_minute_volume_usd = 0
                 self.current_price = None
@@ -671,43 +669,36 @@ class KrakenTerminal(QMainWindow):
             self.order_separator.hide()
 
     def update_recent_trades(self, trade):
-        try:
-            current_time = time.time()
-            self.recent_trades_for_volume.append((current_time, trade['amount'], trade['price'], trade['side']))
+        current_time = time.time()
+        if trade['amount'] > 0 and trade['price'] > 0:
+            self.recent_trades.append((current_time, trade))
 
             one_minute_ago = current_time - 60
-            while self.recent_trades_for_volume and self.recent_trades_for_volume[0][0] < one_minute_ago:
-                self.recent_trades_for_volume.popleft()
+            valid_trades = [(t, trade) for t, trade in self.recent_trades if t > one_minute_ago]
 
-            if trade['amount'] > 0 and trade['price'] > 0:
-                self.recent_trades.append(trade)
-                trades_text = ""
-                for trade in reversed(self.recent_trades):
-                    timestamp = datetime.fromtimestamp(trade['time'] / 1000).strftime('%H:%M:%S')
-                    color = 'green' if trade['side'] == 'buy' else 'red'
-                    amount = trade['amount']
-                    usd_value = amount * trade['price']
-                    if amount >= 1000000:
-                        amount = f"{amount / 1000000:.2f}M"
-                    trade_line = f"<font color='{color}'><b>{timestamp} | {format_price(trade['price']):<12} | {amount:<8} | ${usd_value:.2f}</b></font><br>"
-                    trades_text += trade_line
-                self.recent_trades_display.setHtml(f"<pre>{trades_text}</pre>")
+            volume = sum(trade['amount'] for _, trade in valid_trades)
+            volume_usd = sum(trade['amount'] * trade['price'] for _, trade in valid_trades)
+            buy_volume = sum(trade['amount'] for _, trade in valid_trades if trade['side'] == 'buy')
+            sell_volume = sum(trade['amount'] for _, trade in valid_trades if trade['side'] == 'sell')
 
-            self.one_minute_volume = sum(trade[1] for trade in self.recent_trades_for_volume)
-            self.one_minute_volume_usd = sum(trade[1] * trade[2] for trade in self.recent_trades_for_volume)
+            buy_percentage = (buy_volume / volume * 100) if volume > 0 else 0
+            sell_percentage = (sell_volume / volume * 100) if volume > 0 else 0
 
-            buy_volume = sum(trade[1] for trade in self.recent_trades_for_volume if trade[3] == 'buy')
-            sell_volume = sum(trade[1] for trade in self.recent_trades_for_volume if trade[3] == 'sell')
-
-            buy_percentage = (buy_volume / self.one_minute_volume * 100) if self.one_minute_volume > 0 else 0
-            sell_percentage = (sell_volume / self.one_minute_volume * 100) if self.one_minute_volume > 0 else 0
-
-            volume_display = f"{self.one_minute_volume / 1000000:.2f}M" if self.one_minute_volume >= 1000000 else f"{self.one_minute_volume:.4f}"
+            volume_display = f"{volume / 1000000:.2f}M" if volume >= 1000000 else f"{volume:.4f}"
             self.volume_label.setText(
-                f"1M VOL: {volume_display} | ${self.one_minute_volume_usd:.2f} (<font color='green'>{buy_percentage:.1f}%</font> / <font color='red'>{sell_percentage:.1f}%</font>)")
-        except Exception as e:
-            print(f"Error in update_recent_trades: {str(e)}")
-            print(traceback.format_exc())
+                f"1M VOL: {volume_display} | ${volume_usd:.2f} (<font color='green'>{buy_percentage:.1f}%</font> / <font color='red'>{sell_percentage:.1f}%</font>)")
+
+            trades_text = ""
+            for _, trade in reversed(list(self.recent_trades)[-10:]):
+                timestamp = datetime.fromtimestamp(trade['time'] / 1000).strftime('%H:%M:%S')
+                color = 'green' if trade['side'] == 'buy' else 'red'
+                amount = trade['amount']
+                usd_value = amount * trade['price']
+                if amount >= 1000000:
+                    amount = f"{amount / 1000000:.2f}M"
+                trade_line = f"<font color='{color}'><b>{timestamp} | {format_price(trade['price']):<12} | {amount:<8} | ${usd_value:.2f}</b></font><br>"
+                trades_text += trade_line
+            self.recent_trades_display.setHtml(f"<pre>{trades_text}</pre>")
 
     def update_volume_display(self):
         current_time = time.time()
