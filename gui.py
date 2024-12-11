@@ -176,7 +176,7 @@ class KrakenTerminal(QMainWindow):
         self.connection_status_label = QLabel()
         self.connection_status_label.setFixedSize(20, 20)
         self.update_connection_status(False)
-
+        self.is_armed = False
         self.theme_button = QPushButton('🌙')
         self.theme_button.setFixedSize(30, 30)
         self.theme_button.setFont(QFont('Arial', 12))
@@ -324,6 +324,14 @@ class KrakenTerminal(QMainWindow):
         # Theme button at bottom
         bottom_layout = QHBoxLayout()
         bottom_layout.addWidget(self.theme_button)
+
+        self.arm_button = QPushButton('ARM')
+        self.arm_button.setFixedSize(120, 30)  # Doubled width from 60 to 120
+        self.arm_button.setFont(QFont('Arial', 14))  # Increased font from 12 to 14
+        self.arm_button.clicked.connect(self.toggle_arm)
+        self.arm_button.setStyleSheet('background-color: red')
+        bottom_layout.addWidget(self.arm_button)
+
         bottom_layout.addStretch()
         bottom_layout.addWidget(self.balance_label)
         hidden_layout.addLayout(bottom_layout)
@@ -356,6 +364,11 @@ class KrakenTerminal(QMainWindow):
                 color: {theme['text']};
                 border: 1px solid {theme['text']};
                 padding: 5px;
+            }}
+            QPushButton:disabled {{
+                background-color: #1a1a1a;
+                color: #666666;
+                border: 1px solid #666666;
             }}
             QLineEdit {{
                 background-color: {theme['window']};
@@ -424,6 +437,9 @@ class KrakenTerminal(QMainWindow):
                 self.mid_price_button.setStyleSheet('')
                 self.market_price_button.setStyleSheet('')
                 self.price_button.setStyleSheet('')
+                self.place_order_button.setEnabled(False)
+                self.close_orders_button.setEnabled(False)
+                self.fast_exit_button.setEnabled(False)
                 self.price_input.hide()
                 self.volume_input.clear()
                 self.update_usd_value()
@@ -740,7 +756,7 @@ class KrakenTerminal(QMainWindow):
                 self.usd_value_layout.removeWidget(self.usd_value_label)
                 self.usd_value_label.deleteLater()
 
-            self.usd_value_label = QLabel(f'${usd_value:.2f} | Margin: ${required_margin:.2f}')
+            self.usd_value_label = QLabel(f'${usd_value:.2f} | Margin Cost: ${required_margin:.2f}')
             self.usd_value_label.setFont(QFont('Arial', GUI_FONT_SIZE))
             self.usd_value_layout.addWidget(self.usd_value_label)
 
@@ -748,7 +764,7 @@ class KrakenTerminal(QMainWindow):
             if hasattr(self, 'usd_value_label'):
                 self.usd_value_layout.removeWidget(self.usd_value_label)
                 self.usd_value_label.deleteLater()
-            self.usd_value_label = QLabel('$0.00 | Margin: $0.00')
+            self.usd_value_label = QLabel('$0.00 | Margin Cost: $0.00')
             self.usd_value_label.setFont(QFont('Arial', GUI_FONT_SIZE))
             self.usd_value_layout.addWidget(self.usd_value_label)
         except Exception as e:
@@ -762,6 +778,19 @@ class KrakenTerminal(QMainWindow):
                 self.volume_input.setText(str(quantity))
         except Exception as e:
             print(f"Error copying position size: {str(e)}")
+
+    def toggle_arm(self):
+        try:
+            self.is_armed = not self.is_armed
+            self.arm_button.setText('ARMED' if self.is_armed else 'ARM')
+            self.arm_button.setStyleSheet('background-color: green' if self.is_armed else 'background-color: red')
+
+            # Enable/disable trading buttons
+            self.place_order_button.setEnabled(self.is_armed)
+            self.close_orders_button.setEnabled(self.is_armed)
+            self.fast_exit_button.setEnabled(self.is_armed)
+        except Exception as e:
+            print(f"Error in toggle_arm: {str(e)}")
 
     def place_order(self):
         pair = get_full_symbol(self.pair_input.text())
