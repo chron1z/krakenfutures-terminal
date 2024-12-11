@@ -204,7 +204,7 @@ class KrakenTerminal(QMainWindow):
         self.ws_thread = None
         self.current_price = None
         self.first_symbol = True
-        self.recent_trades = []
+        self.recent_trades = deque(maxlen=10)
         self.recent_trades_for_volume = deque(maxlen=1000)
         self.one_minute_volume = 0
         self.one_minute_volume_usd = 0
@@ -221,25 +221,19 @@ class KrakenTerminal(QMainWindow):
         self.theme_button.setFont(QFont('Arial', 12))
         self.theme_button.clicked.connect(self.toggle_theme)
 
-        self.volume_timer = QTimer()
-        self.volume_timer.timeout.connect(self.update_volume_display)
-        self.volume_timer.start(1000)
-
         self.margin_requirement = None
 
         self.init_ui()
 
     def init_ui(self):
         self.setWindowTitle('KrakenFutures Terminal')
-        self.setGeometry(100, 100, 600, 100)  # Compact initial size
+        self.setGeometry(100, 100, 600, 100)
 
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         self.main_layout = QVBoxLayout(central_widget)
 
         default_font = QFont('Arial', GUI_FONT_SIZE)
-
-        # Initially visible elements
 
         quick_swap_layout = QHBoxLayout()
         self.quick_swap_buttons = []
@@ -268,7 +262,6 @@ class KrakenTerminal(QMainWindow):
         pair_layout.addWidget(self.confirm_button)
         self.main_layout.addLayout(pair_layout)
 
-        # Hidden content
         self.hidden_content = QWidget()
         hidden_layout = QVBoxLayout(self.hidden_content)
 
@@ -371,7 +364,6 @@ class KrakenTerminal(QMainWindow):
 
         hidden_layout.addWidget(self.data_window)
 
-        # Theme button at bottom
         bottom_layout = QHBoxLayout()
         bottom_layout.addWidget(self.theme_button)
 
@@ -382,8 +374,8 @@ class KrakenTerminal(QMainWindow):
         bottom_layout.addWidget(self.settings_button)
 
         self.arm_button = QPushButton('ARM')
-        self.arm_button.setFixedSize(120, 30)  # Doubled width from 60 to 120
-        self.arm_button.setFont(QFont('Arial', 14))  # Increased font from 12 to 14
+        self.arm_button.setFixedSize(120, 30)
+        self.arm_button.setFont(QFont('Arial', 14))
         self.arm_button.clicked.connect(self.toggle_arm)
         self.arm_button.setStyleSheet('background-color: red')
         bottom_layout.addWidget(self.arm_button)
@@ -404,7 +396,6 @@ class KrakenTerminal(QMainWindow):
         self.is_dark_mode = not self.is_dark_mode
         theme = self.dark_theme if self.is_dark_mode else self.light_theme
 
-        # Get current last price color
         current_style = self.last_price_label.styleSheet()
         if 'color: green' in current_style:
             last_price_color = 'green'
@@ -413,7 +404,6 @@ class KrakenTerminal(QMainWindow):
         else:
             last_price_color = theme['text']
 
-        # Set the last price label color
         self.last_price_label.setStyleSheet(f'color: {last_price_color}')
         self.setStyleSheet(f"""
             QMainWindow, QWidget {{
@@ -458,11 +448,10 @@ class KrakenTerminal(QMainWindow):
     def open_settings(self):
         dialog = SettingsDialog(self)
         if dialog.exec_():
-            # Reload settings from file
             from importlib import reload
             import settings
             reload(settings)
-            # Update quick swap buttons with new values
+
             for i, ticker in enumerate(settings.QUICK_SWAP_TICKERS):
                 self.quick_swap_buttons[i].setText(ticker)
 
@@ -619,36 +608,43 @@ class KrakenTerminal(QMainWindow):
             self.order_separator.hide()
 
     def update_recent_trades(self, trade):
-        current_time = time.time()
-        self.recent_trades_for_volume.append((current_time, trade['amount'], trade['price'], trade['side']))
+        try:
+            current_time = time.time()
+            self.recent_trades_for_volume.append((current_time, trade['amount'], trade['price'], trade['side']))
 
-        self.one_minute_volume = sum(trade[1] for trade in self.recent_trades_for_volume)
-        self.one_minute_volume_usd = sum(trade[1] * trade[2] for trade in self.recent_trades_for_volume)
+            one_minute_ago = current_time - 60
+            while self.recent_trades_for_volume and self.recent_trades_for_volume[0][0] < one_minute_ago:
+                self.recent_trades_for_volume.popleft()
 
-        buy_volume = sum(trade[1] for trade in self.recent_trades_for_volume if trade[3] == 'buy')
-        sell_volume = sum(trade[1] for trade in self.recent_trades_for_volume if trade[3] == 'sell')
+            if trade['amount'] > 0 and trade['price'] > 0:
+                self.recent_trades.append(trade)
+                trades_text = ""
+                for trade in reversed(self.recent_trades):
+                    timestamp = datetime.fromtimestamp(trade['time'] / 1000).strftime('%H:%M:%S')
+                    color = 'green' if trade['side'] == 'buy' else 'red'
+                    amount = trade['amount']
+                    usd_value = amount * trade['price']
+                    if amount >= 1000000:
+                        amount = f"{amount / 1000000:.2f}M"
+                    trade_line = f"<font color='{color}'><b>{timestamp} | {format_price(trade['price']):<12} | {amount:<8} | ${usd_value:.2f}</b></font><br>"
+                    trades_text += trade_line
+                self.recent_trades_display.setHtml(f"<pre>{trades_text}</pre>")
 
-        buy_percentage = (buy_volume / self.one_minute_volume * 100) if self.one_minute_volume > 0 else 0
-        sell_percentage = (sell_volume / self.one_minute_volume * 100) if self.one_minute_volume > 0 else 0
+            self.one_minute_volume = sum(trade[1] for trade in self.recent_trades_for_volume)
+            self.one_minute_volume_usd = sum(trade[1] * trade[2] for trade in self.recent_trades_for_volume)
 
-        volume_display = f"{self.one_minute_volume / 1000000:.2f}M" if self.one_minute_volume >= 1000000 else f"{self.one_minute_volume:.4f}"
-        self.volume_label.setText(
-            f"1M VOL: {volume_display} | ${self.one_minute_volume_usd:.2f} (<font color='green'>{buy_percentage:.1f}%</font> / <font color='red'>{sell_percentage:.1f}%</font>)")
+            buy_volume = sum(trade[1] for trade in self.recent_trades_for_volume if trade[3] == 'buy')
+            sell_volume = sum(trade[1] for trade in self.recent_trades_for_volume if trade[3] == 'sell')
 
-        if trade['amount'] > 0 and trade['price'] > 0:
-            self.recent_trades.insert(0, trade)
-            self.recent_trades = self.recent_trades[:10]
-            trades_text = ""
-            for trade in self.recent_trades:
-                timestamp = datetime.fromtimestamp(trade['time'] / 1000).strftime('%H:%M:%S')
-                color = 'green' if trade['side'] == 'buy' else 'red'
-                amount = trade['amount']
-                usd_value = amount * trade['price']
-                if amount >= 1000000:
-                    amount = f"{amount / 1000000:.2f}M"
-                trade_line = f"<font color='{color}'><b>{timestamp} | {format_price(trade['price']):<10} | {amount:<8} | ${usd_value:.2f}</b></font><br>"
-                trades_text += trade_line
-            self.recent_trades_display.setHtml(f"<pre>{trades_text}</pre>")
+            buy_percentage = (buy_volume / self.one_minute_volume * 100) if self.one_minute_volume > 0 else 0
+            sell_percentage = (sell_volume / self.one_minute_volume * 100) if self.one_minute_volume > 0 else 0
+
+            volume_display = f"{self.one_minute_volume / 1000000:.2f}M" if self.one_minute_volume >= 1000000 else f"{self.one_minute_volume:.4f}"
+            self.volume_label.setText(
+                f"1M VOL: {volume_display} | ${self.one_minute_volume_usd:.2f} (<font color='green'>{buy_percentage:.1f}%</font> / <font color='red'>{sell_percentage:.1f}%</font>)")
+        except Exception as e:
+            print(f"Error in update_recent_trades: {str(e)}")
+            print(traceback.format_exc())
 
     def update_volume_display(self):
         current_time = time.time()
@@ -696,7 +692,6 @@ class KrakenTerminal(QMainWindow):
         self.mid_label.setText(f'Mid: {format_price(mid)}')
         self.spread_label.setText(f'Spread: {format_price(spread)} ({spread_percentage:.2f}%)')
 
-        # Add this line to update USD value on each ticker update
         self.update_usd_value()
 
     def update_index_price(self, index_price):
@@ -860,7 +855,6 @@ class KrakenTerminal(QMainWindow):
             self.arm_button.setText('ARMED' if self.is_armed else 'ARM')
             self.arm_button.setStyleSheet('background-color: green' if self.is_armed else 'background-color: red')
 
-            # Enable/disable trading buttons
             self.place_order_button.setEnabled(self.is_armed)
             self.close_orders_button.setEnabled(self.is_armed)
             self.fast_exit_button.setEnabled(self.is_armed)
