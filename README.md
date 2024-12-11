@@ -25,5 +25,6 @@ Changelog:
 - Added dark-mode theme
 - Added balance, available margin and required margin
 - Added ARM button
+- Added customizable ticker quick-swap bar
 
 ![image](https://github.com/user-attachments/assets/9498e637-fc12-42e3-8b1d-bc21af4371f7)
