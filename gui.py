@@ -564,6 +564,13 @@ class KrakenTerminal(QMainWindow):
                 self.data_thread.error_signal.connect(lambda: self.update_connection_status(False))
                 self.data_thread.start()
 
+                position = get_user_position(self.exchange, symbol)
+                open_orders = get_open_orders(self.exchange, symbol)
+                self.update_ui({
+                    'position': position,
+                    'open_orders': open_orders
+                })
+
                 self.ws_thread = WebSocketThread(symbol)
                 self.ws_thread.trade_signal.connect(self.update_recent_trades)
                 self.ws_thread.last_price_signal.connect(self.update_last_price)
