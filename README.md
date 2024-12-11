@@ -26,5 +26,5 @@ Changelog:
 - Added balance, available margin and required margin
 - Added ARM button
 - Added customizable ticker quick-swap bar
-
-![image](https://github.com/user-attachments/assets/f15ec042-6496-40df-90b4-96bd77fe9ce3)
+- 
+![image](https://github.com/user-attachments/assets/80b02291-479b-4142-9884-259014909bba)
