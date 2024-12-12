@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QLabel, QTextEdit, \
-    QFrame, QDialog
+    QFrame, QDialog,QSizePolicy
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer
 from PyQt5.QtGui import QFont
 import ccxt
@@ -12,13 +12,16 @@ import websocket
 import json
 import time
 from collections import deque
-
+import hashlib
+import base64
+import hmac
 
 class WebSocketThread(QThread):
     trade_signal = pyqtSignal(dict)
     last_price_signal = pyqtSignal(float)
     book_signal = pyqtSignal(dict)
     index_signal = pyqtSignal(float)
+    orders_signal = pyqtSignal(list)
     error_signal = pyqtSignal()
 
     def __init__(self, symbol):
@@ -30,17 +33,81 @@ class WebSocketThread(QThread):
         self.last_book_update = 0
         self.book_throttle = BOOK_UPDATE_THROTTLE
         self.ping_interval = 30
+        self.open_orders = {}
+
+    def sign_challenge(self, challenge):
+        challenge_hash = hashlib.sha256(challenge.encode()).digest()
+        secret_decoded = base64.b64decode(KRAKEN_API_SECRET)
+        signature = hmac.new(secret_decoded, challenge_hash, hashlib.sha512)
+        signed_challenge = base64.b64encode(signature.digest()).decode()
+
+        return signed_challenge
+
+    def handle_order_update(self, data):
+        if data.get('feed') == 'open_orders_snapshot':
+            self.open_orders = {}
+            for order in data.get('orders', []):
+                if float(order.get('filled', 0)) < float(order.get('qty', 0)):
+                    order_id = order.get('order_id')
+                    self.open_orders[order_id] = {
+                        'id': order_id,
+                        'side': 'buy' if order.get('direction') == 0 else 'sell',
+                        'qty': float(order.get('qty', 0)),
+                        'limitPrice': float(order.get('limit_price', 0)),
+                        'filled': float(order.get('filled', 0)),
+                        'type': order.get('type'),
+                        'reduceOnly': order.get('reduce_only', False),
+                        'last_update': order.get('last_update_time')
+                    }
+        else:
+            is_cancel = data.get('is_cancel', False)
+            reason = data.get('reason')
+            order = data.get('order', {})
+
+            order_id = order.get('order_id') if order else data.get('order_id')
+
+            if is_cancel or (order and float(order.get('filled', 0)) >= float(order.get('qty', 0))):
+                if order_id in self.open_orders:
+                    del self.open_orders[order_id]
+                    print(f"Order {order_id} removed. Reason: {reason}")
+            elif order:
+                qty = float(order.get('qty', 0))
+                filled = float(order.get('filled', 0))
+                if filled < qty:
+                    self.open_orders[order_id] = {
+                        'id': order_id,
+                        'side': 'buy' if order.get('direction') == 0 else 'sell',
+                        'qty': qty,
+                        'limitPrice': float(order.get('limit_price', 0)),
+                        'filled': filled,
+                        'type': order.get('type'),
+                        'reduceOnly': order.get('reduce_only', False),
+                        'last_update': order.get('last_update_time')
+                    }
+
+        self.orders_signal.emit(list(self.open_orders.values()))
 
     def run(self):
         def on_message(ws, message):
             try:
-                if not message.startswith('{'):
-                    return
-
                 data = json.loads(message)
-                feed = data.get('feed')
+                # print(f"Processing message type: {data.get('event')} feed: {data.get('feed')} {data}")
 
-                if feed == 'trade':
+                if data.get('event') == 'challenge':
+                    challenge = data['message']
+                    signed_challenge = self.sign_challenge(challenge)
+
+                    orders_subscription = {
+                        "event": "subscribe",
+                        "feed": "open_orders",
+                        "api_key": KRAKEN_API_KEY,
+                        "original_challenge": challenge,
+                        "signed_challenge": signed_challenge
+                    }
+                    print(f"Sending orders subscription: {orders_subscription}")
+                    ws.send(json.dumps(orders_subscription))
+
+                elif data.get('feed') == 'trade' and data.get('price') and data.get('qty'):
                     if all(key in data for key in ('price', 'qty')):
                         trade = {
                             'time': data.get('time', int(time.time() * 1000)),
@@ -51,19 +118,22 @@ class WebSocketThread(QThread):
                         self.trade_signal.emit(trade)
                         self.last_price_signal.emit(float(data['price']))
 
-                elif feed == 'ticker':
-                    if 'markPrice' in data:
-                        self.index_signal.emit(float(data['markPrice']))
-
-                elif feed == 'book_snapshot':
+                elif data.get('feed') == 'book_snapshot':
                     self.orderbook = {'bids': {}, 'asks': {}}
-                    for bid in data.get('bids', []):
-                        self.orderbook['bids'][float(bid[0])] = float(bid[1])
-                    for ask in data.get('asks', []):
-                        self.orderbook['asks'][float(ask[0])] = float(ask[1])
+                    bids = data.get('bids', [])
+                    asks = data.get('asks', [])
+
+                    for bid in bids:
+                        if isinstance(bid, (list, tuple)) and len(bid) >= 2:
+                            self.orderbook['bids'][float(bid[0])] = float(bid[1])
+
+                    for ask in asks:
+                        if isinstance(bid, (list, tuple)) and len(ask) >= 2:
+                            self.orderbook['asks'][float(ask[0])] = float(ask[1])
+
                     self.emit_book_update()
 
-                elif feed == 'book':
+                elif data.get('feed') == 'book':
                     if all(key in data for key in ('side', 'price', 'qty')):
                         side = 'bids' if data['side'] == 'buy' else 'asks'
                         price = float(data['price'])
@@ -76,8 +146,17 @@ class WebSocketThread(QThread):
 
                         self.emit_book_update()
 
+                elif data.get('feed') in ['open_orders_snapshot', 'open_orders']:
+                    self.handle_order_update(data)
+
+                elif data.get('feed') == 'ticker':
+                    if 'markPrice' in data:
+                        index_price = float(data['markPrice'])
+                        self.index_signal.emit(index_price)
+
             except Exception as e:
-                print(f"Error processing message: {e}")
+                print(f"Error in message processing: {str(e)}")
+                traceback.print_exc()
 
         def on_error(ws, error):
             print(f"WebSocket error: {error}")
@@ -90,6 +169,7 @@ class WebSocketThread(QThread):
 
         def on_open(ws):
             print("WebSocket connection opened")
+
             subscribe_messages = [
                 {
                     "event": "subscribe",
@@ -107,8 +187,17 @@ class WebSocketThread(QThread):
                     "product_ids": [self.symbol]
                 }
             ]
+
             for msg in subscribe_messages:
+                print(f"Sending subscription: {msg}")
                 ws.send(json.dumps(msg))
+
+            challenge_request = {
+                "event": "challenge",
+                "api_key": KRAKEN_API_KEY
+            }
+            print(f"Sending challenge request: {challenge_request}")
+            ws.send(json.dumps(challenge_request))
 
         while self.running:
             try:
@@ -116,16 +205,14 @@ class WebSocketThread(QThread):
                     "wss://futures.kraken.com/ws/v1",
                     on_message=on_message,
                     on_error=on_error,
-                    on_close=on_close,
-                    on_open=on_open
-                )
-                self.ws.run_forever(ping_interval=self.ping_interval)
+                    on_close=on_close)
+                self.ws.on_open = on_open
+                self.ws.run_forever()
                 if not self.running:
                     break
-                time.sleep(5)
             except Exception as e:
                 print(f"WebSocket connection error: {e}")
-                time.sleep(5)
+                time.sleep(1)
 
     def stop(self):
         self.running = False
@@ -200,7 +287,6 @@ class DataFetchThread(QThread):
         while self.running:
             try:
                 position = get_user_position(self.exchange, self.symbol)
-                open_orders = get_open_orders(self.exchange, self.symbol)
                 balance = self.exchange.fetch_balance()
                 flex_account = balance['info']['accounts']['flex']
                 available_margin = float(flex_account['availableMargin'])
@@ -208,7 +294,6 @@ class DataFetchThread(QThread):
 
                 self.data_signal.emit({
                     'position': position,
-                    'open_orders': open_orders,
                     'available_margin': available_margin,
                     'total_balance': total_balance
                 })
@@ -442,6 +527,15 @@ class KrakenTerminal(QMainWindow):
         self.main_layout.addWidget(self.hidden_content)
         self.hidden_content.hide()
 
+        # Initialize armed state and buttons
+        self.is_armed = False
+        self.place_order_button.setEnabled(False)
+        self.close_orders_button.setEnabled(False)
+        self.fast_exit_button.setEnabled(False)
+        self.place_order_button.setStyleSheet('background-color: #1a1a1a')
+        self.close_orders_button.setStyleSheet('background-color: #1a1a1a')
+        self.fast_exit_button.setStyleSheet('background-color: #1a1a1a')
+
     def quick_swap_clicked(self, button_index):
         if self.quick_swap_buttons[button_index].text():
             self.pair_input.setText(self.quick_swap_buttons[button_index].text())
@@ -536,8 +630,6 @@ class KrakenTerminal(QMainWindow):
                 self.separator.hide()
                 self.order_separator.hide()
                 self.volume_label.setText('')
-                self.recent_trades_display.clear()
-                self.recent_trades = []
                 self.one_minute_volume = 0
                 self.one_minute_volume_usd = 0
                 self.current_price = None
@@ -564,6 +656,9 @@ class KrakenTerminal(QMainWindow):
                 self.data_thread.error_signal.connect(lambda: self.update_connection_status(False))
                 self.data_thread.start()
 
+                self.recent_trades_display.clear()
+                self.recent_trades = []
+
                 position = get_user_position(self.exchange, symbol)
                 open_orders = get_open_orders(self.exchange, symbol)
                 self.update_ui({
@@ -575,6 +670,7 @@ class KrakenTerminal(QMainWindow):
                 self.ws_thread.trade_signal.connect(self.update_recent_trades)
                 self.ws_thread.last_price_signal.connect(self.update_last_price)
                 self.ws_thread.book_signal.connect(self.update_ticker)
+                self.ws_thread.orders_signal.connect(self.update_open_orders_display)
                 self.ws_thread.index_signal.connect(self.update_index_price)
                 self.ws_thread.error_signal.connect(lambda: self.update_connection_status(False))
                 self.ws_thread.start()
@@ -607,10 +703,7 @@ class KrakenTerminal(QMainWindow):
 
     def update_ui(self, data):
         try:
-            self.setUpdatesEnabled(False)
-
             position = data['position']
-            open_orders = data['open_orders']
             available_margin = data['available_margin']
             total_balance = data['total_balance']
 
@@ -652,21 +745,19 @@ class KrakenTerminal(QMainWindow):
                 self.separator.hide()
                 self.pos_button.hide()
 
-            self.update_open_orders_display(open_orders)
             self.update_connection_status(True)
+            self.update_usd_value()
+
 
         except Exception as e:
             print(f"Error in update_ui: {str(e)}")
-            print(traceback.format_exc())
-        finally:
-            self.setUpdatesEnabled(True)
 
-    def update_open_orders_display(self, open_orders):
-        if open_orders:
+    def update_open_orders_display(self, orders):
+        if orders:
             orders_text = "<b>Open Orders:</b><br>"
-            for order in open_orders:
+            for order in orders:
                 side_color = 'green' if order['side'] == 'buy' else 'red'
-                orders_text += f"<font color='{side_color}'>{order['side'].upper()}</font> | Size: {order['amount']} | Price: {format_price(order['price'])}<br>"
+                orders_text += f"<font color='{side_color}'>{order['side'].upper()}</font> | Size: {order['qty']} | Price: {format_price(order['limitPrice'])}<br>"
             self.open_orders_label.setText(orders_text)
             self.open_orders_label.setTextFormat(Qt.RichText)
             self.open_orders_label.show()
@@ -711,21 +802,20 @@ class KrakenTerminal(QMainWindow):
         current_time = time.time()
         one_minute_ago = current_time - 60
 
-        while self.recent_trades_for_volume and self.recent_trades_for_volume[0][0] < one_minute_ago:
-            self.recent_trades_for_volume.popleft()
+        valid_trades = [(t, trade) for t, trade in self.recent_trades if t > one_minute_ago]
 
-        self.one_minute_volume = sum(trade[1] for trade in self.recent_trades_for_volume)
-        self.one_minute_volume_usd = sum(trade[1] * trade[2] for trade in self.recent_trades_for_volume)
+        volume = sum(trade['amount'] for _, trade in valid_trades)
+        volume_usd = sum(trade['amount'] * trade['price'] for _, trade in valid_trades)
 
-        buy_volume = sum(trade[1] for trade in self.recent_trades_for_volume if trade[3] == 'buy')
-        sell_volume = sum(trade[1] for trade in self.recent_trades_for_volume if trade[3] == 'sell')
+        buy_volume = sum(trade['amount'] for _, trade in valid_trades if trade['side'] == 'buy')
+        sell_volume = sum(trade['amount'] for _, trade in valid_trades if trade['side'] == 'sell')
 
-        buy_percentage = (buy_volume / self.one_minute_volume * 100) if self.one_minute_volume > 0 else 0
-        sell_percentage = (sell_volume / self.one_minute_volume * 100) if self.one_minute_volume > 0 else 0
+        buy_percentage = (buy_volume / volume * 100) if volume > 0 else 0
+        sell_percentage = (sell_volume / volume * 100) if volume > 0 else 0
 
-        volume_display = f"{self.one_minute_volume / 1000000:.2f}M" if self.one_minute_volume >= 1000000 else f"{self.one_minute_volume:.4f}"
+        volume_display = f"{volume / 1000000:.2f}M" if volume >= 1000000 else f"{volume:.4f}"
         self.volume_label.setText(
-            f"1M VOL: {volume_display} | ${self.one_minute_volume_usd:.2f} (<font color='green'>{buy_percentage:.1f}%</font> / <font color='red'>{sell_percentage:.1f}%</font>)")
+            f"1M VOL: {volume_display} | ${volume_usd:.2f} (<font color='green'>{buy_percentage:.1f}%</font> / <font color='red'>{sell_percentage:.1f}%</font>)")
 
     def update_last_price(self, price):
         self.last_price_label.setText(f'Last: {format_price(price)}')
@@ -752,6 +842,8 @@ class KrakenTerminal(QMainWindow):
         self.ask_label.setText(f'Ask: {format_price(ask)}')
         self.mid_label.setText(f'Mid: {format_price(mid)}')
         self.spread_label.setText(f'Spread: {format_price(spread)} ({spread_percentage:.2f}%)')
+
+        self.update_usd_value()
 
     def update_index_price(self, index_price):
         bid = float(self.bid_label.text().split(': ')[1]) if self.bid_label.text() else 0
@@ -866,38 +958,47 @@ class KrakenTerminal(QMainWindow):
     def update_usd_value(self):
         try:
             quantity = float(self.volume_input.text() or 0)
+
+            bid = float(self.bid_label.text().split(': ')[1]) if self.bid_label.text() else 0
+            ask = float(self.ask_label.text().split(': ')[1]) if self.ask_label.text() else 0
+            mid = (bid + ask) / 2
+
             if self.selected_price:
                 price = self.selected_price
-            elif self.market_price_button.styleSheet() == 'background-color: blue':
+            elif self.best_price_button.styleSheet() == 'background-color: blue':
                 if self.order_type == 'buy':
-                    price = float(self.ask_label.text().split(': ')[1])
+                    price = bid
+                elif self.order_type == 'sell':
+                    price = ask
                 else:
-                    price = float(self.bid_label.text().split(': ')[1])
+                    price = mid
             else:
-                bid = float(self.bid_label.text().split(': ')[1])
-                ask = float(self.ask_label.text().split(': ')[1])
-                price = (bid + ask) / 2
+                price = mid
 
             usd_value = quantity * price
-            required_margin = usd_value * self.margin_requirement if self.margin_requirement else 0
+            required_margin = usd_value * float(self.margin_requirement) if self.margin_requirement else 0
+
+            formatted_text = f'<b>${usd_value:12.2f} | Margin Cost: ${required_margin:12.2f}</b>'
 
             if hasattr(self, 'usd_value_label'):
-                self.usd_value_layout.removeWidget(self.usd_value_label)
-                self.usd_value_label.deleteLater()
-
-            self.usd_value_label = QLabel(f'${usd_value:.2f} | Margin Cost: ${required_margin:.2f}')
-            self.usd_value_label.setFont(QFont('Arial', GUI_FONT_SIZE))
-            self.usd_value_layout.addWidget(self.usd_value_label)
+                self.usd_value_label.setText(formatted_text)
+            else:
+                self.usd_value_label = QLabel(formatted_text)
+                self.usd_value_label.setFont(QFont('Courier', GUI_FONT_SIZE))
+                self.usd_value_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                self.usd_value_label.setAlignment(Qt.AlignLeft)
+                self.usd_value_layout.addWidget(self.usd_value_label)
 
         except ValueError:
+            formatted_text = '<b>$0.00            | Margin Cost: $0.00           </b>'
             if hasattr(self, 'usd_value_label'):
-                self.usd_value_layout.removeWidget(self.usd_value_label)
-                self.usd_value_label.deleteLater()
-            self.usd_value_label = QLabel('$0.00 | Margin Cost: $0.00')
-            self.usd_value_label.setFont(QFont('Arial', GUI_FONT_SIZE))
-            self.usd_value_layout.addWidget(self.usd_value_label)
-        except Exception as e:
-            print(f"Error in update_usd_value: {e}")
+                self.usd_value_label.setText(formatted_text)
+            else:
+                self.usd_value_label = QLabel(formatted_text)
+                self.usd_value_label.setFont(QFont('Courier', GUI_FONT_SIZE))
+                self.usd_value_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                self.usd_value_label.setAlignment(Qt.AlignLeft)
+                self.usd_value_layout.addWidget(self.usd_value_label)
 
     def copy_position_size(self):
         try:
@@ -914,9 +1015,21 @@ class KrakenTerminal(QMainWindow):
             self.arm_button.setText('ARMED' if self.is_armed else 'ARM')
             self.arm_button.setStyleSheet('background-color: green' if self.is_armed else 'background-color: red')
 
+            # Sync all trading buttons with armed state
             self.place_order_button.setEnabled(self.is_armed)
             self.close_orders_button.setEnabled(self.is_armed)
             self.fast_exit_button.setEnabled(self.is_armed)
+
+            # Force buttons to disabled state when unarmed
+            if not self.is_armed:
+                self.place_order_button.setStyleSheet('background-color: #1a1a1a')
+                self.close_orders_button.setStyleSheet('background-color: #1a1a1a')
+                self.fast_exit_button.setStyleSheet('background-color: #1a1a1a')
+            else:
+                self.place_order_button.setStyleSheet('')
+                self.close_orders_button.setStyleSheet('')
+                self.fast_exit_button.setStyleSheet('')
+
         except Exception as e:
             print(f"Error in toggle_arm: {str(e)}")
 
