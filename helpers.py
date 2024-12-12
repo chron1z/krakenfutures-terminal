@@ -32,7 +32,7 @@ def calculate_adjusted_mid(bid, ask, tick_size, order_type):
 
 
 def get_full_symbol(pair):
-    return f"PF_{pair}"
+    return f"PF_{pair}USD"
 
 
 def get_user_position(exchange, symbol):

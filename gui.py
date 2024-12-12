@@ -494,20 +494,16 @@ class KrakenTerminal(QMainWindow):
         quantity_layout = QHBoxLayout(quantity_container)
         quantity_layout.setSpacing(2)
         quantity_layout.setContentsMargins(0, 0, 0, 0)
-
-        quantity_label = QLabel('Qty:', font=QFont(GUI_FONT, GUI_FONT_SIZE))
         self.volume_input = QLineEdit(font=QFont(GUI_FONT, GUI_FONT_SIZE))
         self.volume_input.setMinimumWidth(300)
         self.volume_input.textChanged.connect(self.update_usd_value)
         self.volume_input.editingFinished.connect(self.enforce_min_size_multiple)
 
-        # Create the quantity adjustment buttons
         self.qty_1_button = QPushButton('1', font=QFont(GUI_FONT, GUI_FONT_SIZE - 4))
         self.qty_10_button = QPushButton('10', font=QFont(GUI_FONT, GUI_FONT_SIZE - 4))
         self.qty_100_button = QPushButton('100', font=QFont(GUI_FONT, GUI_FONT_SIZE - 4))
         self.qty_1000_button = QPushButton('1000', font=QFont(GUI_FONT, GUI_FONT_SIZE - 4))
 
-        # Configure buttons
         for button in [self.qty_1_button, self.qty_10_button, self.qty_100_button, self.qty_1000_button]:
             button.setFixedWidth(60)
             button.setFixedHeight(40)
@@ -518,22 +514,16 @@ class KrakenTerminal(QMainWindow):
         self.qty_100_button.clicked.connect(lambda: self.adjust_quantity(100))
         self.qty_1000_button.clicked.connect(lambda: self.adjust_quantity(1000))
 
-        # Create clear button
         self.clear_qty_button = QPushButton('×', font=QFont(GUI_FONT, GUI_FONT_SIZE))
         self.clear_qty_button.setFixedWidth(25)
         self.clear_qty_button.setFixedHeight(45)
         self.clear_qty_button.setStyleSheet('background-color: red; color: white;')
         self.clear_qty_button.clicked.connect(lambda: self.volume_input.setText(''))
 
-        # Add to layout after volume input
-
-
-        quantity_layout.addWidget(quantity_label)
         quantity_layout.addWidget(self.qty_1_button)
         quantity_layout.addWidget(self.qty_10_button)
         quantity_layout.addWidget(self.qty_100_button)
         quantity_layout.addWidget(self.qty_1000_button)
-        quantity_layout.addWidget(quantity_label)
         quantity_layout.addWidget(self.volume_input)
 
         quantity_layout.addWidget(self.clear_qty_button)
@@ -541,7 +531,6 @@ class KrakenTerminal(QMainWindow):
         self.pos_button = QPushButton('pos', font=default_font)
         self.pos_button.clicked.connect(self.copy_position_size)
         self.pos_button.hide()
-
 
         quantity_layout.addWidget(self.pos_button)
         order_layout.addWidget(quantity_container)
@@ -812,7 +801,7 @@ class KrakenTerminal(QMainWindow):
             market = self.exchange.market(symbol)
             self.tick_size = market['precision']['price']
             self.min_order_size = market['precision']['amount']
-            self.volume_input.setPlaceholderText(f"Min: {self.min_order_size}")
+            self.volume_input.setPlaceholderText(f"Min qty: {self.min_order_size}")
             print(f"Tick size for {symbol}: {self.tick_size}")
             print(f"Minimum order size: {self.min_order_size}")
         except Exception as e:
@@ -939,7 +928,7 @@ class KrakenTerminal(QMainWindow):
             trades_text = ""
             for _, trade in reversed(list(self.recent_trades)[-10:]):
                 timestamp = datetime.fromtimestamp(trade['time'] / 1000).strftime('%H:%M:%S')
-                color = 'green' if trade['side'] == 'buy' else 'red'
+                color = '#00B300' if trade['side'] == 'buy' else 'red'
                 amount = trade['amount']
                 usd_value = amount * trade['price']
                 if amount >= 1000000:
@@ -1190,7 +1179,7 @@ class KrakenTerminal(QMainWindow):
             try:
                 current_qty = float(self.volume_input.text() or 0)
                 adjusted_qty = round(current_qty / self.min_order_size) * self.min_order_size
-                self.volume_input.setText(str(adjusted_qty))  # Update UI
+                self.volume_input.setText(str(adjusted_qty))
 
                 if self.best_price_button.styleSheet() == 'background-color: blue':
                     self.set_best_price()
