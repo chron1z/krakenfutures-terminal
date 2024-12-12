@@ -22,6 +22,7 @@ class WebSocketThread(QThread):
     book_signal = pyqtSignal(dict)
     index_signal = pyqtSignal(float)
     orders_signal = pyqtSignal(list)
+    position_signal = pyqtSignal(dict)
     error_signal = pyqtSignal()
 
     def __init__(self, symbol):
@@ -104,8 +105,18 @@ class WebSocketThread(QThread):
                         "original_challenge": challenge,
                         "signed_challenge": signed_challenge
                     }
-                    print(f"Sending orders subscription: {orders_subscription}")
+                    # print(f"Sending orders subscription: {orders_subscription}")
+                    positions_subscription = {
+                        "event": "subscribe",
+                        "feed": "open_positions",
+                        "api_key": KRAKEN_API_KEY,
+                        "original_challenge": challenge,
+                        "signed_challenge": signed_challenge
+                    }
+
                     ws.send(json.dumps(orders_subscription))
+                    ws.send(json.dumps(positions_subscription))
+                    print(f"Sending orders subscription: {positions_subscription}")
 
                 elif data.get('feed') == 'trade' and data.get('price') and data.get('qty'):
                     if all(key in data for key in ('price', 'qty')):
@@ -149,6 +160,20 @@ class WebSocketThread(QThread):
                 elif data.get('feed') in ['open_orders_snapshot', 'open_orders']:
                     self.handle_order_update(data)
 
+                elif data.get('feed') in ['open_positions', 'open_positions_snapshot']:
+                    if len(data.get('positions', [])) > 0:
+                        position = data['positions'][0]
+                        position_data = {
+                            'entryPrice': position['entry_price'],
+                            'contracts': position['balance'],
+                            'info': {
+                                'side': 'LONG' if position['balance'] > 0 else 'SHORT'
+                            }
+                        }
+                        self.position_signal.emit(position_data)
+                    else:
+                        self.position_signal.emit({})
+
                 elif data.get('feed') == 'ticker':
                     if 'markPrice' in data:
                         index_price = float(data['markPrice'])
@@ -189,14 +214,14 @@ class WebSocketThread(QThread):
             ]
 
             for msg in subscribe_messages:
-                print(f"Sending subscription: {msg}")
+                # print(f"Sending subscription: {msg}")
                 ws.send(json.dumps(msg))
 
             challenge_request = {
                 "event": "challenge",
                 "api_key": KRAKEN_API_KEY
             }
-            print(f"Sending challenge request: {challenge_request}")
+            # print(f"Sending challenge request: {challenge_request}")
             ws.send(json.dumps(challenge_request))
 
         while self.running:
@@ -673,6 +698,7 @@ class KrakenTerminal(QMainWindow):
                 self.ws_thread.orders_signal.connect(self.update_open_orders_display)
                 self.ws_thread.index_signal.connect(self.update_index_price)
                 self.ws_thread.error_signal.connect(lambda: self.update_connection_status(False))
+                self.ws_thread.position_signal.connect(self.update_position_display)
                 self.ws_thread.start()
 
                 self.hidden_content.show()
@@ -721,17 +747,39 @@ class KrakenTerminal(QMainWindow):
 
     def update_ui(self, data):
         try:
-            position = data['position']
             available_margin = data['available_margin']
             total_balance = data['total_balance']
-
             self.balance_label.setText(f'Free Margin: ${available_margin:.2f} | Balance: ${total_balance:.2f}')
+            self.update_connection_status(True)
+            self.update_usd_value()
+        except Exception as e:
+            print(f"Error in update_ui: {str(e)}")
 
-            if position and position['contracts'] != 0:
-                entry_price = float(position['entryPrice'])
-                quantity = abs(float(position['contracts']))
-                position_type = position['info']['side'].upper()
-                position_color = 'green' if position_type == "LONG" else 'red'
+    def update_open_orders_display(self, orders):
+        if orders:
+            orders_text = "<b>Open Orders:</b><br>"
+            for order in orders:
+                side_color = 'green' if order['side'] == 'buy' else 'red'
+                orders_text += f"<font color='{side_color}'>{order['side'].upper()}</font> | Size: {order['qty']} | Price: {format_price(order['limitPrice'])}<br>"
+            self.open_orders_label.setText(orders_text)
+            self.open_orders_label.setTextFormat(Qt.RichText)
+            self.open_orders_label.show()
+            self.order_separator.show()
+        else:
+            self.open_orders_label.hide()
+            self.order_separator.hide()
+
+    def update_position_display(self, data):
+        if data is None:
+            self.position_label.hide()
+            self.separator.hide()
+            self.pos_button.hide()
+            return
+        try:
+            if data and 'entryPrice' in data:
+                entry_price = float(data['entryPrice'])
+                quantity = abs(float(data['contracts']))
+                position_type = data['info']['side']
 
                 bid = float(self.bid_label.text().split(': ')[1]) if self.bid_label.text() else 0
                 ask = float(self.ask_label.text().split(': ')[1]) if self.ask_label.text() else 0
@@ -750,17 +798,18 @@ class KrakenTerminal(QMainWindow):
 
                 mid_percentage = (mid_pnl / (entry_price * quantity)) * 100
                 best_percentage = (best_pnl / (entry_price * quantity)) * 100
-                impact_percentage = best_percentage
+                impact_percentage = (impact_pnl / (entry_price * quantity)) * 100
 
                 mid_color = 'green' if mid_pnl >= 0 else 'red'
                 best_color = 'green' if best_pnl >= 0 else 'red'
-                impact_color = best_color
+                impact_color = 'green' if impact_pnl >= 0 else 'red'
+                position_color = 'green' if position_type == "LONG" else 'red'
 
                 position_text = (
                     f"Position: {position_type} | Entry: {format_price(entry_price)}<br>"
                     f"Quantity: <font color='{position_color}'>{quantity}</font> | USD Value: ${format_price(entry_price * quantity)}<br>"
-                    f"UPNL: MID <font color='{mid_color}'>${format_price(abs(mid_pnl))} ({mid_percentage:.2f}%)</font>  "
-                    f"BEST <font color='{best_color}'>${format_price(abs(best_pnl))} ({best_percentage:.2f}%)</font>  "
+                    f"UPNL: MID <font color='{mid_color}'>${format_price(abs(mid_pnl))} ({mid_percentage:.2f}%)</font> | "
+                    f"BEST <font color='{best_color}'>${format_price(abs(best_pnl))} ({best_percentage:.2f}%)</font> | "
                     f"MARKET <font color='{impact_color}'>${format_price(abs(impact_pnl))} ({impact_percentage:.2f}%)</font>"
                 )
 
@@ -772,25 +821,8 @@ class KrakenTerminal(QMainWindow):
                 self.position_label.hide()
                 self.separator.hide()
                 self.pos_button.hide()
-
-            self.update_connection_status(True)
-            self.update_usd_value()
-
         except Exception as e:
-            print(f"Error in update_ui: {str(e)}")
-    def update_open_orders_display(self, orders):
-        if orders:
-            orders_text = "<b>Open Orders:</b><br>"
-            for order in orders:
-                side_color = 'green' if order['side'] == 'buy' else 'red'
-                orders_text += f"<font color='{side_color}'>{order['side'].upper()}</font> | Size: {order['qty']} | Price: {format_price(order['limitPrice'])}<br>"
-            self.open_orders_label.setText(orders_text)
-            self.open_orders_label.setTextFormat(Qt.RichText)
-            self.open_orders_label.show()
-            self.order_separator.show()
-        else:
-            self.open_orders_label.hide()
-            self.order_separator.hide()
+            print(f"Error in update_position_display: {str(e)}")
 
     def update_recent_trades(self, trade):
         current_time = time.time()
@@ -1011,7 +1043,7 @@ class KrakenTerminal(QMainWindow):
                 self.usd_value_label.setText(formatted_text)
             else:
                 self.usd_value_label = QLabel(formatted_text)
-                self.usd_value_label.setFont(QFont('Courier', GUI_FONT_SIZE))
+                self.usd_value_label.setFont(QFont('Arial', GUI_FONT_SIZE))
                 self.usd_value_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
                 self.usd_value_label.setAlignment(Qt.AlignLeft)
                 self.usd_value_layout.addWidget(self.usd_value_label)
