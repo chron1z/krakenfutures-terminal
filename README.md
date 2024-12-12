@@ -28,7 +28,7 @@ Changelog:
 - Added customizable data throttling for websockets
 - Added mid, best and market impact price to UPNL calculations
 
-![image](https://github.com/user-attachments/assets/80b02291-479b-4142-9884-259014909bba)
+![image](https://github.com/user-attachments/assets/19c5cf74-426c-423d-8b1f-2229cac85133)
 
 DISCLAIMER:
 This software is for informational purposes only. Use at your own risk. 
