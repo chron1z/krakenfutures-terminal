@@ -30,7 +30,7 @@ Changelog:
 - Added mid, best and market impact price to UPNL calculations
 - Added hotkeys
 
-![image](https://github.com/user-attachments/assets/19c5cf74-426c-423d-8b1f-2229cac85133)
+![image](https://github.com/user-attachments/assets/96871c60-1561-4eb6-8a90-cc44f5d14818)
 
 DISCLAIMER:
 This software is for informational purposes only. Use at your own risk. 
