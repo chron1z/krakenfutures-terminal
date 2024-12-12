@@ -4,6 +4,8 @@ GUI_FONT_SIZE = 22
 GUI_FONT = 'Segoe UI'
 QUICK_SWAP_TICKERS = ['XBTUSD', 'ETHUSD', 'SOLUSD', 'BONKUSD', 'CRVUSD']
 BOOK_UPDATE_THROTTLE = '0'
+PLACE_ORDER_HOTKEY = "Ctrl+1"
+CLOSE_ORDERS_HOTKEY = "Ctrl+2"
 
 
 def save_settings(setting_name, value):
