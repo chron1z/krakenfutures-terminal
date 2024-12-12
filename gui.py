@@ -801,7 +801,7 @@ class KrakenTerminal(QMainWindow):
             market = self.exchange.market(symbol)
             self.tick_size = market['precision']['price']
             self.min_order_size = market['precision']['amount']
-            self.volume_input.setPlaceholderText(f"Min qty: {self.min_order_size}")
+            self.volume_input.setPlaceholderText(f"Min: {self.min_order_size}")
             print(f"Tick size for {symbol}: {self.tick_size}")
             print(f"Minimum order size: {self.min_order_size}")
         except Exception as e:
