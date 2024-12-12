@@ -426,6 +426,7 @@ class KrakenTerminal(QMainWindow):
 
         quick_swap_layout = QHBoxLayout()
         self.quick_swap_buttons = []
+
         for i in range(5):
             button = QPushButton('', font=QFont(GUI_FONT, GUI_FONT_SIZE - 2))
             button.setFixedHeight(40)
@@ -443,7 +444,7 @@ class KrakenTerminal(QMainWindow):
         pair_layout.addWidget(pair_label)
         self.pair_input = QLineEdit()
         self.pair_input.setFont(default_font)
-        self.pair_input.setText("XBTUSD")
+        self.pair_input.setText("XBT")
         pair_layout.addWidget(self.pair_input)
 
         self.confirm_button = QPushButton('Confirm', font=default_font)
@@ -477,6 +478,7 @@ class KrakenTerminal(QMainWindow):
         self.mid_price_button.clicked.connect(self.set_mid_price)
         self.market_price_button.clicked.connect(self.set_market_price)
         self.price_button.clicked.connect(self.set_price_input)
+
         price_layout = QHBoxLayout()
         price_layout.addWidget(self.best_price_button)
         price_layout.addWidget(self.mid_price_button)
@@ -494,6 +496,7 @@ class KrakenTerminal(QMainWindow):
         quantity_layout = QHBoxLayout(quantity_container)
         quantity_layout.setSpacing(2)
         quantity_layout.setContentsMargins(0, 0, 0, 0)
+
         self.volume_input = QLineEdit(font=QFont(GUI_FONT, GUI_FONT_SIZE))
         self.volume_input.setMinimumWidth(300)
         self.volume_input.textChanged.connect(self.update_usd_value)
@@ -525,7 +528,6 @@ class KrakenTerminal(QMainWindow):
         quantity_layout.addWidget(self.qty_100_button)
         quantity_layout.addWidget(self.qty_1000_button)
         quantity_layout.addWidget(self.volume_input)
-
         quantity_layout.addWidget(self.clear_qty_button)
 
         self.pos_button = QPushButton('pos', font=default_font)
