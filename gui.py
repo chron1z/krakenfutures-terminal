@@ -4,7 +4,8 @@ from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer
 from PyQt5.QtGui import QFont
 import ccxt
 import traceback
-from settings import KRAKEN_API_KEY, KRAKEN_API_SECRET, GUI_FONT_SIZE, QUICK_SWAP_TICKERS, save_settings, BOOK_UPDATE_THROTTLE
+from settings import (KRAKEN_API_KEY, KRAKEN_API_SECRET, GUI_FONT, GUI_FONT_SIZE, QUICK_SWAP_TICKERS,
+                      save_settings, BOOK_UPDATE_THROTTLE)
 from helpers import format_price, round_to_tick, calculate_adjusted_mid, get_full_symbol, get_user_position, \
     get_open_orders
 from datetime import datetime
@@ -375,16 +376,16 @@ class KrakenTerminal(QMainWindow):
         self.one_minute_volume = 0
         self.one_minute_volume_usd = 0
         self.volume_label = QLabel()
-        self.volume_label.setFont(QFont('Arial', GUI_FONT_SIZE))
+        self.volume_label.setFont(QFont('Segoe UI', GUI_FONT_SIZE))
         self.balance_label = QLabel()
-        self.balance_label.setFont(QFont('Arial', GUI_FONT_SIZE))
+        self.balance_label.setFont(QFont('Segoe UI', GUI_FONT_SIZE))
         self.connection_status_label = QLabel()
         self.connection_status_label.setFixedSize(20, 20)
         self.update_connection_status(False)
         self.is_armed = False
         self.theme_button = QPushButton('🌙')
         self.theme_button.setFixedSize(30, 30)
-        self.theme_button.setFont(QFont('Arial', 12))
+        self.theme_button.setFont(QFont('Segoe UI', 12))
         self.theme_button.clicked.connect(self.toggle_theme)
 
         self.margin_requirement = None
@@ -399,13 +400,13 @@ class KrakenTerminal(QMainWindow):
         self.setCentralWidget(central_widget)
         self.main_layout = QVBoxLayout(central_widget)
 
-        default_font = QFont('Arial', GUI_FONT_SIZE)
+        default_font = QFont('Segoe UI', GUI_FONT_SIZE)
 
         quick_swap_layout = QHBoxLayout()
         self.quick_swap_buttons = []
         for i in range(5):
-            button = QPushButton('', font=QFont('Arial', GUI_FONT_SIZE - 2))
-            button.setFixedHeight(30)
+            button = QPushButton('', font=QFont('Segoe UI', GUI_FONT_SIZE - 2))
+            button.setFixedHeight(40)
             button.clicked.connect(lambda checked, x=i: self.quick_swap_clicked(x))
             self.quick_swap_buttons.append(button)
             quick_swap_layout.addWidget(button)
@@ -496,10 +497,10 @@ class KrakenTerminal(QMainWindow):
         data_layout = QVBoxLayout(self.data_window)
         for label in [self.last_price_label, self.bid_label, self.mid_label, self.ask_label,
                       self.spread_label, self.index_price_label]:
-            label.setFont(QFont('Arial', GUI_FONT_SIZE))
+            label.setFont(QFont('Segoe UI', GUI_FONT_SIZE))
             data_layout.addWidget(label)
 
-        self.volume_label.setFont(QFont('Arial', GUI_FONT_SIZE))
+        self.volume_label.setFont(QFont('Segoe UI', GUI_FONT_SIZE))
         data_layout.addWidget(self.volume_label)
 
         self.separator = QFrame()
@@ -508,7 +509,7 @@ class KrakenTerminal(QMainWindow):
         self.separator.hide()
         data_layout.addWidget(self.separator)
 
-        self.position_label.setFont(QFont('Arial', GUI_FONT_SIZE))
+        self.position_label.setFont(QFont('Segoe UI', GUI_FONT_SIZE))
         self.position_label.setTextFormat(Qt.RichText)
         data_layout.addWidget(self.position_label)
 
@@ -518,12 +519,12 @@ class KrakenTerminal(QMainWindow):
         self.order_separator.hide()
         data_layout.addWidget(self.order_separator)
 
-        self.open_orders_label.setFont(QFont('Arial', GUI_FONT_SIZE))
+        self.open_orders_label.setFont(QFont('Segoe UI', GUI_FONT_SIZE))
         data_layout.addWidget(self.open_orders_label)
 
         self.recent_trades_display = QTextEdit(self)
         self.recent_trades_display.setReadOnly(True)
-        self.recent_trades_display.setFont(QFont('Arial', GUI_FONT_SIZE))
+        self.recent_trades_display.setFont(QFont('Segoe UI', GUI_FONT_SIZE))
         self.recent_trades_display.setFixedHeight(10 * 36)
         self.recent_trades_display.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         data_layout.addWidget(self.recent_trades_display)
@@ -535,13 +536,13 @@ class KrakenTerminal(QMainWindow):
 
         self.settings_button = QPushButton('⚙️')
         self.settings_button.setFixedSize(30, 30)
-        self.settings_button.setFont(QFont('Arial', 14))
+        self.settings_button.setFont(QFont('Segoe UI', 14))
         self.settings_button.clicked.connect(self.open_settings)
         bottom_layout.addWidget(self.settings_button)
 
         self.arm_button = QPushButton('ARM')
         self.arm_button.setFixedSize(120, 30)
-        self.arm_button.setFont(QFont('Arial', 14))
+        self.arm_button.setFont(QFont('Segoe UI', 14))
         self.arm_button.clicked.connect(self.toggle_arm)
         self.arm_button.setStyleSheet('background-color: red')
         bottom_layout.addWidget(self.arm_button)
@@ -1043,7 +1044,7 @@ class KrakenTerminal(QMainWindow):
                 self.usd_value_label.setText(formatted_text)
             else:
                 self.usd_value_label = QLabel(formatted_text)
-                self.usd_value_label.setFont(QFont('Arial', GUI_FONT_SIZE))
+                self.usd_value_label.setFont(QFont('Segoe UI', GUI_FONT_SIZE))
                 self.usd_value_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
                 self.usd_value_label.setAlignment(Qt.AlignLeft)
                 self.usd_value_layout.addWidget(self.usd_value_label)
