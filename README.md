@@ -8,6 +8,7 @@ Features:
 - Unrealized P&L tracking with best/mid price, market order price impact calculation
 - Smart price selection: best price/mid price 
 - Instant market close position with one-click market orders
+- Hotkeys for order placement/cancellation
 - 1-minute volume tracking
 - Recent trades display
 - Bulk order cancellation
@@ -27,6 +28,7 @@ Changelog:
 - Added customizable ticker quick-swap bar
 - Added customizable data throttling for websockets
 - Added mid, best and market impact price to UPNL calculations
+- Added hotkeys
 
 ![image](https://github.com/user-attachments/assets/19c5cf74-426c-423d-8b1f-2229cac85133)
 
