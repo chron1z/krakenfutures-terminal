@@ -345,6 +345,7 @@ class KrakenTerminal(QMainWindow):
         self.ws_thread = None
         self.current_price = None
         self.first_symbol = True
+        self.orderbook = {'bids': {}, 'asks': {}}
         self.recent_trades = deque(maxlen=1000)
         self.one_minute_volume = 0
         self.one_minute_volume_usd = 0
@@ -700,6 +701,24 @@ class KrakenTerminal(QMainWindow):
             print(f"Error getting tick size: {str(e)}")
             print(traceback.format_exc())
 
+    def calculate_impact_price(self, size, side):
+        """Calculate average execution price for market order of given size"""
+        total_cost = 0
+        remaining_size = size
+        book_side = 'bids' if side == 'sell' else 'asks'
+        prices = sorted(self.orderbook[book_side].keys(), reverse=(book_side == 'bids'))
+
+        for price in prices:
+            level_size = self.orderbook[book_side][price]
+            executed = min(remaining_size, level_size)
+            total_cost += executed * price
+            remaining_size -= executed
+
+            if remaining_size <= 0:
+                break
+
+        return total_cost / size
+
     def update_ui(self, data):
         try:
             position = data['position']
@@ -714,25 +733,35 @@ class KrakenTerminal(QMainWindow):
                 position_type = position['info']['side'].upper()
                 position_color = 'green' if position_type == "LONG" else 'red'
 
+                bid = float(self.bid_label.text().split(': ')[1]) if self.bid_label.text() else 0
+                ask = float(self.ask_label.text().split(': ')[1]) if self.ask_label.text() else 0
+                mid_price = (bid + ask) / 2
+
                 if position_type == "LONG":
-                    unrealized_pnl = (float(self.ask_label.text().split(': ')[1]) - entry_price) * quantity
+                    mid_pnl = (mid_price - entry_price) * quantity
+                    best_pnl = (ask - entry_price) * quantity
+                    impact_price = self.calculate_impact_price(quantity, 'sell')
+                    impact_pnl = (impact_price - entry_price) * quantity
                 else:
-                    unrealized_pnl = (entry_price - float(self.bid_label.text().split(': ')[1])) * quantity
+                    mid_pnl = (entry_price - mid_price) * quantity
+                    best_pnl = (entry_price - bid) * quantity
+                    impact_price = self.calculate_impact_price(quantity, 'buy')
+                    impact_pnl = (entry_price - impact_price) * quantity
 
-                upnl_percentage = (unrealized_pnl / (entry_price * quantity)) * 100
-                fee_rate = 0.00015
-                round_trip_fee = entry_price * quantity * fee_rate * 2
-                usd_value = entry_price * quantity
+                mid_percentage = (mid_pnl / (entry_price * quantity)) * 100
+                best_percentage = (best_pnl / (entry_price * quantity)) * 100
+                impact_percentage = best_percentage
 
-                upnl_color = 'green' if unrealized_pnl >= 0 else 'red'
-                upnl_text = f"<font color='{upnl_color}'>${format_price(abs(unrealized_pnl))} ({upnl_percentage:.2f}%)</font>"
-                upnl_sign = '+' if unrealized_pnl >= 0 else '-'
+                mid_color = 'green' if mid_pnl >= 0 else 'red'
+                best_color = 'green' if best_pnl >= 0 else 'red'
+                impact_color = best_color
 
                 position_text = (
                     f"Position: {position_type} | Entry: {format_price(entry_price)}<br>"
-                    f"Quantity: <font color='{position_color}'>{quantity}</font> | USD Value: ${format_price(usd_value)}<br>"
-                    f"UPNL: {upnl_sign}{upnl_text}<br>"
-                    f"Round Trip Fee: ${format_price(round_trip_fee)}"
+                    f"Quantity: <font color='{position_color}'>{quantity}</font> | USD Value: ${format_price(entry_price * quantity)}<br>"
+                    f"UPNL: MID <font color='{mid_color}'>${format_price(abs(mid_pnl))} ({mid_percentage:.2f}%)</font>  "
+                    f"BEST <font color='{best_color}'>${format_price(abs(best_pnl))} ({best_percentage:.2f}%)</font>  "
+                    f"MARKET <font color='{impact_color}'>${format_price(abs(impact_pnl))} ({impact_percentage:.2f}%)</font>"
                 )
 
                 self.position_label.setText(position_text)
@@ -747,10 +776,8 @@ class KrakenTerminal(QMainWindow):
             self.update_connection_status(True)
             self.update_usd_value()
 
-
         except Exception as e:
             print(f"Error in update_ui: {str(e)}")
-
     def update_open_orders_display(self, orders):
         if orders:
             orders_text = "<b>Open Orders:</b><br>"
@@ -841,6 +868,7 @@ class KrakenTerminal(QMainWindow):
         self.ask_label.setText(f'Ask: {format_price(ask)}')
         self.mid_label.setText(f'Mid: {format_price(mid)}')
         self.spread_label.setText(f'Spread: {format_price(spread)} ({spread_percentage:.2f}%)')
+        self.orderbook = self.ws_thread.orderbook
 
         self.update_usd_value()
 
