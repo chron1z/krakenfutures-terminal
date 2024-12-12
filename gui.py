@@ -128,7 +128,7 @@ class WebSocketThread(QThread):
                             self.orderbook['bids'][float(bid[0])] = float(bid[1])
 
                     for ask in asks:
-                        if isinstance(bid, (list, tuple)) and len(ask) >= 2:
+                        if isinstance(ask, (list, tuple)) and len(ask) >= 2:
                             self.orderbook['asks'][float(ask[0])] = float(ask[1])
 
                     self.emit_book_update()

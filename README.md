@@ -27,6 +27,7 @@ Changelog:
 - Added ARM button
 - Added customizable ticker quick-swap bar
 - Added customizable data throttling for websockets
+- Added mid, best and market impact price to UPNL calculations
 
 ![image](https://github.com/user-attachments/assets/80b02291-479b-4142-9884-259014909bba)
 
