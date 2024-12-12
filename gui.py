@@ -527,7 +527,6 @@ class KrakenTerminal(QMainWindow):
         self.main_layout.addWidget(self.hidden_content)
         self.hidden_content.hide()
 
-        # Initialize armed state and buttons
         self.is_armed = False
         self.place_order_button.setEnabled(False)
         self.close_orders_button.setEnabled(False)
@@ -1015,12 +1014,10 @@ class KrakenTerminal(QMainWindow):
             self.arm_button.setText('ARMED' if self.is_armed else 'ARM')
             self.arm_button.setStyleSheet('background-color: green' if self.is_armed else 'background-color: red')
 
-            # Sync all trading buttons with armed state
             self.place_order_button.setEnabled(self.is_armed)
             self.close_orders_button.setEnabled(self.is_armed)
             self.fast_exit_button.setEnabled(self.is_armed)
 
-            # Force buttons to disabled state when unarmed
             if not self.is_armed:
                 self.place_order_button.setStyleSheet('background-color: #1a1a1a')
                 self.close_orders_button.setStyleSheet('background-color: #1a1a1a')
