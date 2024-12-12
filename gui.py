@@ -1,11 +1,11 @@
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QLabel, QTextEdit, \
-    QFrame, QDialog,QSizePolicy
+    QFrame, QDialog,QSizePolicy, QShortcut
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFont, QKeySequence
 import ccxt
 import traceback
 from settings import (KRAKEN_API_KEY, KRAKEN_API_SECRET, GUI_FONT, GUI_FONT_SIZE, QUICK_SWAP_TICKERS,
-                      save_settings, BOOK_UPDATE_THROTTLE)
+                      save_settings, BOOK_UPDATE_THROTTLE, PLACE_ORDER_HOTKEY, CLOSE_ORDERS_HOTKEY)
 from helpers import format_price, round_to_tick, calculate_adjusted_mid, get_full_symbol, get_user_position, \
     get_open_orders
 from datetime import datetime
@@ -287,16 +287,35 @@ class SettingsDialog(QDialog):
         throttle_layout.addWidget(self.throttle_input)
         layout.addLayout(throttle_layout)
 
+
+        hotkey_layout = QHBoxLayout()
+        place_order_label = QLabel('Place Order Hotkey:')
+        self.place_order_input = QLineEdit()
+        self.place_order_input.setText(settings.PLACE_ORDER_HOTKEY)
+
+        close_orders_label = QLabel('Close Orders Hotkey:')
+        self.close_orders_input = QLineEdit()
+        self.close_orders_input.setText(settings.CLOSE_ORDERS_HOTKEY)
+
+        hotkey_layout.addWidget(place_order_label)
+        hotkey_layout.addWidget(self.place_order_input)
+        hotkey_layout.addWidget(close_orders_label)
+        hotkey_layout.addWidget(self.close_orders_input)
+        layout.addLayout(hotkey_layout)
         save_button = QPushButton('Save')
         save_button.clicked.connect(self.save_and_close)
         layout.addWidget(save_button)
         self.setLayout(layout)
+
+
 
     def save_and_close(self):
         new_tickers = [input_field.text() for input_field in self.ticker_inputs]
         new_throttle = int(self.throttle_input.text())
         save_settings('QUICK_SWAP_TICKERS', new_tickers)
         save_settings('BOOK_UPDATE_THROTTLE', int(new_throttle))
+        save_settings('PLACE_ORDER_HOTKEY', self.place_order_input.text())
+        save_settings('CLOSE_ORDERS_HOTKEY', self.close_orders_input.text())
         self.accept()
 
 class DataFetchThread(QThread):
@@ -392,6 +411,9 @@ class KrakenTerminal(QMainWindow):
 
         self.init_ui()
 
+    def mousePressEvent(self, event):
+        self.setFocus()
+
     def init_ui(self):
         self.setWindowTitle('KrakenFutures Terminal')
         self.setGeometry(100, 100, 600, 100)
@@ -468,16 +490,61 @@ class KrakenTerminal(QMainWindow):
         self.price_input.hide()
         order_layout.addWidget(self.price_input)
 
-        quantity_layout = QHBoxLayout()
-        quantity_label = QLabel('Quantity:', font=default_font)
-        self.volume_input = QLineEdit(font=default_font)
+        quantity_container = QWidget()
+        quantity_layout = QHBoxLayout(quantity_container)
+        quantity_layout.setSpacing(2)
+        quantity_layout.setContentsMargins(0, 0, 0, 0)
+
+        quantity_label = QLabel('Qty:', font=QFont(GUI_FONT, GUI_FONT_SIZE))
+        self.volume_input = QLineEdit(font=QFont(GUI_FONT, GUI_FONT_SIZE))
+        self.volume_input.setMinimumWidth(300)
         self.volume_input.textChanged.connect(self.update_usd_value)
+        self.volume_input.editingFinished.connect(self.enforce_min_size_multiple)
+
+        # Create the quantity adjustment buttons
+        self.qty_1_button = QPushButton('1', font=QFont(GUI_FONT, GUI_FONT_SIZE - 4))
+        self.qty_10_button = QPushButton('10', font=QFont(GUI_FONT, GUI_FONT_SIZE - 4))
+        self.qty_100_button = QPushButton('100', font=QFont(GUI_FONT, GUI_FONT_SIZE - 4))
+        self.qty_1000_button = QPushButton('1000', font=QFont(GUI_FONT, GUI_FONT_SIZE - 4))
+
+        # Configure buttons
+        for button in [self.qty_1_button, self.qty_10_button, self.qty_100_button, self.qty_1000_button]:
+            button.setFixedWidth(60)
+            button.setFixedHeight(40)
+            button.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+
+        self.qty_1_button.clicked.connect(lambda: self.adjust_quantity(1))
+        self.qty_10_button.clicked.connect(lambda: self.adjust_quantity(10))
+        self.qty_100_button.clicked.connect(lambda: self.adjust_quantity(100))
+        self.qty_1000_button.clicked.connect(lambda: self.adjust_quantity(1000))
+
+        # Create clear button
+        self.clear_qty_button = QPushButton('×', font=QFont(GUI_FONT, GUI_FONT_SIZE))
+        self.clear_qty_button.setFixedWidth(25)
+        self.clear_qty_button.setFixedHeight(45)
+        self.clear_qty_button.setStyleSheet('background-color: red; color: white;')
+        self.clear_qty_button.clicked.connect(lambda: self.volume_input.setText(''))
+
+        # Add to layout after volume input
+
+
+        quantity_layout.addWidget(quantity_label)
+        quantity_layout.addWidget(self.qty_1_button)
+        quantity_layout.addWidget(self.qty_10_button)
+        quantity_layout.addWidget(self.qty_100_button)
+        quantity_layout.addWidget(self.qty_1000_button)
+        quantity_layout.addWidget(quantity_label)
+        quantity_layout.addWidget(self.volume_input)
+
+        quantity_layout.addWidget(self.clear_qty_button)
+
         self.pos_button = QPushButton('pos', font=default_font)
         self.pos_button.clicked.connect(self.copy_position_size)
         self.pos_button.hide()
-        quantity_layout.addWidget(quantity_label)
-        quantity_layout.addWidget(self.volume_input)
+
+
         quantity_layout.addWidget(self.pos_button)
+        order_layout.addWidget(quantity_container)
         order_layout.addLayout(quantity_layout)
 
         self.place_order_button = QPushButton('Place Order', font=default_font)
@@ -540,6 +607,12 @@ class KrakenTerminal(QMainWindow):
         self.settings_button.clicked.connect(self.open_settings)
         bottom_layout.addWidget(self.settings_button)
 
+        self.place_order_shortcut = QShortcut(QKeySequence(PLACE_ORDER_HOTKEY), self)
+        self.place_order_shortcut.activated.connect(lambda: self.place_order() if self.is_armed else None)
+
+        self.close_orders_shortcut = QShortcut(QKeySequence(CLOSE_ORDERS_HOTKEY), self)
+        self.close_orders_shortcut.activated.connect(lambda: self.close_all_orders() if self.is_armed else None)
+
         self.arm_button = QPushButton('ARM')
         self.arm_button.setFixedSize(120, 30)
         self.arm_button.setFont(QFont(GUI_FONT, 14))
@@ -562,10 +635,28 @@ class KrakenTerminal(QMainWindow):
         self.close_orders_button.setStyleSheet('background-color: #1a1a1a')
         self.fast_exit_button.setStyleSheet('background-color: #1a1a1a')
 
+    def adjust_quantity(self, multiplier):
+        try:
+            current_qty = float(self.volume_input.text() or 0)
+            increment = self.min_order_size * multiplier
+            new_qty = current_qty + increment
+            self.volume_input.setText(str(new_qty))
+
+        except ValueError:
+            self.volume_input.setText(str(self.min_order_size * multiplier))
+
     def quick_swap_clicked(self, button_index):
         if self.quick_swap_buttons[button_index].text():
             self.pair_input.setText(self.quick_swap_buttons[button_index].text())
             self.on_confirm()
+
+    def enforce_min_size_multiple(self):
+        try:
+            current_qty = float(self.volume_input.text() or 0)
+            closest_multiple = round(current_qty / self.min_order_size) * self.min_order_size
+            self.volume_input.setText(str(closest_multiple))
+        except ValueError:
+            pass
 
     def toggle_theme(self):
         self.is_dark_mode = not self.is_dark_mode
@@ -807,8 +898,8 @@ class KrakenTerminal(QMainWindow):
                 position_color = 'green' if position_type == "LONG" else 'red'
 
                 position_text = (
-                    f"Position: {position_type} | Entry: {format_price(entry_price)}<br>"
-                    f"Quantity: <font color='{position_color}'>{quantity}</font> | USD Value: ${format_price(entry_price * quantity)}<br>"
+                    f"Position: {position_type} | Entry: {format_price(entry_price)} | "
+                    f"Quantity: <font color='{position_color}'>{quantity}</font> | Value: ${format_price(entry_price * quantity)}<br>"
                     f"UPNL: MID <font color='{mid_color}'>${format_price(abs(mid_pnl))} ({mid_percentage:.2f}%)</font> | "
                     f"BEST <font color='{best_color}'>${format_price(abs(best_pnl))} ({best_percentage:.2f}%)</font> | "
                     f"MARKET <font color='{impact_color}'>${format_price(abs(impact_pnl))} ({impact_percentage:.2f}%)</font>"
@@ -1097,6 +1188,10 @@ class KrakenTerminal(QMainWindow):
         volume = self.volume_input.text()
         if self.order_type:
             try:
+                current_qty = float(self.volume_input.text() or 0)
+                adjusted_qty = round(current_qty / self.min_order_size) * self.min_order_size
+                self.volume_input.setText(str(adjusted_qty))  # Update UI
+
                 if self.best_price_button.styleSheet() == 'background-color: blue':
                     self.set_best_price()
                 elif self.mid_price_button.styleSheet() == 'background-color: blue':
