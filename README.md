@@ -3,7 +3,7 @@ A lightweight, real-time trading terminal for Kraken Futures.
 
 Features:
 
-- Low memory, lightweight application (~70MB compared to ~700MB for Kraken's web terminal)
+- Low memory, lightweight application (~25MB compared to ~700MB for Kraken's web terminal)
 - Real-time WebSocket price data and order book updates (significantly faster than Kraken's web terminal)
 - 1-minute volume tracking
 - Position management with unrealized P&L tracking
