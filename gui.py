@@ -397,7 +397,7 @@ class KrakenTerminal(QMainWindow):
         self.volume_label = QLabel()
         self.volume_label.setFont(QFont(GUI_FONT, GUI_FONT_SIZE))
         self.balance_label = QLabel()
-        self.balance_label.setFont(QFont(GUI_FONT, GUI_FONT_SIZE))
+        self.balance_label.setFont(QFont(GUI_FONT, GUI_FONT_SIZE - 2))
         self.connection_status_label = QLabel()
         self.connection_status_label.setFixedSize(20, 20)
         self.update_connection_status(False)
@@ -451,6 +451,7 @@ class KrakenTerminal(QMainWindow):
         self.confirm_button.clicked.connect(self.on_confirm)
         pair_layout.addWidget(self.confirm_button)
         self.main_layout.addLayout(pair_layout)
+        self.pair_input.returnPressed.connect(self.confirm_button.click)
 
         self.hidden_content = QWidget()
         hidden_layout = QVBoxLayout(self.hidden_content)
@@ -479,6 +480,31 @@ class KrakenTerminal(QMainWindow):
         self.market_price_button.clicked.connect(self.set_market_price)
         self.price_button.clicked.connect(self.set_price_input)
 
+        self.tick_1_button = QPushButton('1', font=QFont(GUI_FONT, GUI_FONT_SIZE - 4))
+        self.tick_2_button = QPushButton('2', font=QFont(GUI_FONT, GUI_FONT_SIZE - 4))
+        self.tick_5_button = QPushButton('5', font=QFont(GUI_FONT, GUI_FONT_SIZE - 4 ))
+        self.tick_10_button = QPushButton('10', font=QFont(GUI_FONT, GUI_FONT_SIZE - 4 ))
+
+        for button in [self.tick_1_button, self.tick_2_button, self.tick_5_button, self.tick_10_button]:
+            button.setFixedWidth(60)
+            button.setFixedHeight(40)
+
+        self.tick_1_button.clicked.connect(lambda: self.adjust_price_by_ticks(1))
+        self.tick_2_button.clicked.connect(lambda: self.adjust_price_by_ticks(2))
+        self.tick_5_button.clicked.connect(lambda: self.adjust_price_by_ticks(5))
+        self.tick_10_button.clicked.connect(lambda: self.adjust_price_by_ticks(10))
+
+        self.price_input = QLineEdit(font=QFont(GUI_FONT, GUI_FONT_SIZE))
+        self.price_input.setPlaceholderText("Enter price")
+        self.price_input.textChanged.connect(self.update_selected_price)
+        self.price_input.hide()
+
+        self.best_price_button.clicked.connect(self.set_best_price)
+        self.mid_price_button.clicked.connect(self.set_mid_price)
+        self.market_price_button.clicked.connect(self.set_market_price)
+        self.price_button.clicked.connect(self.set_price_input)
+
+        # Create main price button layout
         price_layout = QHBoxLayout()
         price_layout.addWidget(self.best_price_button)
         price_layout.addWidget(self.mid_price_button)
@@ -486,11 +512,18 @@ class KrakenTerminal(QMainWindow):
         price_layout.addWidget(self.price_button)
         order_layout.addLayout(price_layout)
 
-        self.price_input = QLineEdit(font=default_font)
-        self.price_input.setPlaceholderText("Enter price")
-        self.price_input.textChanged.connect(self.update_selected_price)
-        self.price_input.hide()
-        order_layout.addWidget(self.price_input)
+        # Create separate container for price input and tick buttons
+        self.price_input_container = QWidget()
+        price_input_layout = QHBoxLayout(self.price_input_container)
+        price_input_layout.setSpacing(2)  # Reduce spacing between elements
+        price_input_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins
+        price_input_layout.addWidget(self.tick_1_button)
+        price_input_layout.addWidget(self.tick_2_button)
+        price_input_layout.addWidget(self.tick_5_button)
+        price_input_layout.addWidget(self.tick_10_button)
+        price_input_layout.addWidget(self.price_input)
+        self.price_input_container.hide()
+        order_layout.addWidget(self.price_input_container)
 
         quantity_container = QWidget()
         quantity_layout = QHBoxLayout(quantity_container)
@@ -626,6 +659,21 @@ class KrakenTerminal(QMainWindow):
         self.close_orders_button.setStyleSheet('background-color: #1a1a1a')
         self.fast_exit_button.setStyleSheet('background-color: #1a1a1a')
 
+    def adjust_price_by_ticks(self, num_ticks):
+        if not self.order_type or not self.price_input.text():
+            return
+
+        current_price = float(self.price_input.text())
+        adjustment = self.tick_size * num_ticks
+
+        if self.order_type == 'sell':
+            new_price = current_price + adjustment
+        else:
+            new_price = current_price - adjustment
+
+        formatted_price = format_price(round_to_tick(new_price, self.tick_size))
+        self.price_input.setText(formatted_price)
+
     def adjust_quantity(self, multiplier):
         try:
             current_qty = float(self.volume_input.text() or 0)
@@ -718,6 +766,12 @@ class KrakenTerminal(QMainWindow):
     def on_confirm(self):
         try:
             symbol = get_full_symbol(self.pair_input.text())
+            new_symbol = get_full_symbol(self.pair_input.text())
+
+            current_symbol = self.ws_thread.symbol if self.ws_thread else None
+
+            if new_symbol == current_symbol:
+                return
 
             if symbol:
                 if self.data_thread:
@@ -751,6 +805,7 @@ class KrakenTerminal(QMainWindow):
                 self.market_price_button.setStyleSheet('')
                 self.price_button.setStyleSheet('')
                 self.price_input.hide()
+                self.price_input_container.hide()
                 self.volume_input.clear()
                 self.update_usd_value()
 
@@ -803,7 +858,7 @@ class KrakenTerminal(QMainWindow):
             market = self.exchange.market(symbol)
             self.tick_size = market['precision']['price']
             self.min_order_size = market['precision']['amount']
-            self.volume_input.setPlaceholderText(f"Min: {self.min_order_size}")
+            self.volume_input.setPlaceholderText(f"Min size: {self.min_order_size}")
             print(f"Tick size for {symbol}: {self.tick_size}")
             print(f"Minimum order size: {self.min_order_size}")
         except Exception as e:
@@ -1035,7 +1090,7 @@ class KrakenTerminal(QMainWindow):
         self.mid_price_button.setStyleSheet('')
         self.market_price_button.setStyleSheet('')
         self.price_button.setStyleSheet('')
-        self.price_input.hide()
+        self.price_input_container.hide()
         self.update_usd_value()
 
     def set_mid_price(self):
@@ -1048,7 +1103,7 @@ class KrakenTerminal(QMainWindow):
         self.best_price_button.setStyleSheet('')
         self.market_price_button.setStyleSheet('')
         self.price_button.setStyleSheet('')
-        self.price_input.hide()
+        self.price_input_container.hide()
         self.update_usd_value()
 
     def set_market_price(self):
@@ -1058,7 +1113,7 @@ class KrakenTerminal(QMainWindow):
         self.best_price_button.setStyleSheet('')
         self.mid_price_button.setStyleSheet('')
         self.price_button.setStyleSheet('')
-        self.price_input.hide()
+        self.price_input_container.hide()
         self.update_usd_value()
 
     def set_price_input(self):
@@ -1067,6 +1122,9 @@ class KrakenTerminal(QMainWindow):
         self.best_price_button.setStyleSheet('')
         self.mid_price_button.setStyleSheet('')
         self.market_price_button.setStyleSheet('')
+
+        # Show price input and tick buttons
+        self.price_input_container.show()
         self.price_input.show()
 
         if self.order_type == 'buy':

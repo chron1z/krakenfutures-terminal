@@ -2,12 +2,16 @@ from decimal import Decimal, ROUND_HALF_UP
 
 
 def format_price(price):
-    return f"{price:.8f}".rstrip('0').rstrip('.')
+    return f"{price:.10f}".rstrip('0').rstrip('.')
+
 
 
 def round_to_tick(price, tick_size):
     if tick_size:
-        return round(price / tick_size) * tick_size
+        decimal_places = str(tick_size)[::-1].find('.')
+        if decimal_places > 0:
+            multiplier = 10 ** decimal_places
+            return round(price / tick_size) * tick_size
     return price
 
 
