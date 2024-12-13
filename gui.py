@@ -259,8 +259,26 @@ class WebSocketThread(QThread):
                 self.last_book_update = current_time
 
 
+class RecentTradesWindow(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle('Recent Trades')
+        layout = QVBoxLayout(self)
+        self.trades_display = QTextEdit()
+        self.trades_display.setReadOnly(True)
+        self.trades_display.setFont(QFont(GUI_FONT, GUI_FONT_SIZE))
+        self.trades_display.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        layout.addWidget(self.trades_display)
+        self.resize(600, 400)
+
+    def update_trades(self, trades_text):
+        self.trades_display.setHtml(f"<pre>{trades_text}</pre>")
+
+    def clear(self):
+        self.trades_display.clear()
+
 class OrdersDisplay(QWidget):
-    order_cancelled = pyqtSignal(str)  # Signal for order cancellation
+    order_cancelled = pyqtSignal(str)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -289,7 +307,6 @@ class OrdersDisplay(QWidget):
                 cancel_button.setFixedSize(30, 30)
                 cancel_button.setStyleSheet("color: red;")
 
-                # Create a new function to avoid lambda capture issues
                 def create_cancel_handler(order_id):
                     return lambda: self.order_cancelled.emit(order_id)
 
@@ -426,7 +443,6 @@ class KrakenTerminal(QMainWindow):
         self.spread_label = QLabel()
         self.index_price_label = QLabel()
         self.position_label = QLabel()
-        self.open_orders_label = QLabel()
         self.order_type = None
         self.tick_size = None
         self.selected_price = None
@@ -454,6 +470,13 @@ class KrakenTerminal(QMainWindow):
         self.orders_display = OrdersDisplay()
         self.orders_display.order_cancelled.connect(self.cancel_specific_order)
         self.margin_requirement = None
+        self.trades_window = RecentTradesWindow()
+        self.trades_button = QPushButton('📊')
+        self.trades_button.setFixedSize(30, 30)
+        self.trades_button.setFont(QFont(GUI_FONT, 14))
+        self.trades_button.clicked.connect(self.toggle_trades_window)
+        self.last_price_label.setText('Last: waiting for data')
+        self.volume_label.setText('1M VOL: waiting for data')
 
         self.init_ui()
 
@@ -639,31 +662,29 @@ class KrakenTerminal(QMainWindow):
         self.volume_label.setFont(QFont(GUI_FONT, GUI_FONT_SIZE))
         data_layout.addWidget(self.volume_label)
 
+        data_order_separator = QFrame()
+        data_order_separator.setFrameShape(QFrame.HLine)
+        data_order_separator.setFrameShadow(QFrame.Sunken)
+        data_order_separator.setStyleSheet("background-color: #404040; margin: 5px 0px;")
+        data_order_separator.setFixedHeight(1)
+        data_layout.addWidget(data_order_separator)
+
+        self.position_label.setFont(QFont(GUI_FONT, GUI_FONT_SIZE))
+        self.position_label.setTextFormat(Qt.RichText)
+        data_layout.addWidget(self.position_label)
+
         self.separator = QFrame()
         self.separator.setFrameShape(QFrame.HLine)
         self.separator.setFrameShadow(QFrame.Sunken)
         self.separator.hide()
         data_layout.addWidget(self.separator)
 
-        self.position_label.setFont(QFont(GUI_FONT, GUI_FONT_SIZE))
-        self.position_label.setTextFormat(Qt.RichText)
-        data_layout.addWidget(self.position_label)
-
         self.order_separator = QFrame()
         self.order_separator.setFrameShape(QFrame.HLine)
         self.order_separator.setFrameShadow(QFrame.Sunken)
         self.order_separator.hide()
         data_layout.addWidget(self.order_separator)
-
-        self.open_orders_label.setFont(QFont(GUI_FONT, GUI_FONT_SIZE))
         data_layout.addWidget(self.orders_display)
-
-        self.recent_trades_display = QTextEdit(self)
-        self.recent_trades_display.setReadOnly(True)
-        self.recent_trades_display.setFont(QFont(GUI_FONT, GUI_FONT_SIZE))
-        self.recent_trades_display.setFixedHeight(10 * 36)
-        self.recent_trades_display.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        data_layout.addWidget(self.recent_trades_display)
 
         hidden_layout.addWidget(self.data_window)
 
@@ -675,6 +696,7 @@ class KrakenTerminal(QMainWindow):
         self.settings_button.setFont(QFont(GUI_FONT, 14))
         self.settings_button.clicked.connect(self.open_settings)
         bottom_layout.addWidget(self.settings_button)
+        bottom_layout.addWidget(self.trades_button)
 
         self.place_order_shortcut = QShortcut(QKeySequence(PLACE_ORDER_HOTKEY), self)
         self.place_order_shortcut.activated.connect(lambda: self.place_order() if self.is_armed else None)
@@ -691,6 +713,7 @@ class KrakenTerminal(QMainWindow):
 
         bottom_layout.addStretch()
         bottom_layout.addWidget(self.balance_label)
+        hidden_layout.addStretch()
         hidden_layout.addLayout(bottom_layout)
 
         self.main_layout.addWidget(self.hidden_content)
@@ -703,6 +726,12 @@ class KrakenTerminal(QMainWindow):
         self.place_order_button.setStyleSheet('background-color: #1a1a1a')
         self.close_orders_button.setStyleSheet('background-color: #1a1a1a')
         self.fast_exit_button.setStyleSheet('background-color: #1a1a1a')
+
+    def toggle_trades_window(self):
+        if self.trades_window.isVisible():
+            self.trades_window.hide()
+        else:
+            self.trades_window.show()
 
     def adjust_price_by_ticks(self, num_ticks):
         if not self.order_type or not self.price_input.text():
@@ -834,17 +863,16 @@ class KrakenTerminal(QMainWindow):
                     self.ws_thread.stop()
                     self.ws_thread.wait()
 
-                self.last_price_label.setText('')
+                self.last_price_label.setText('Last: waiting...')
                 self.bid_label.setText('')
                 self.ask_label.setText('')
                 self.mid_label.setText('')
                 self.spread_label.setText('')
                 self.index_price_label.setText('')
+                self.volume_label.setText('1M VOL: waiting...')
                 self.position_label.hide()
-                self.open_orders_label.hide()
                 self.separator.hide()
                 self.order_separator.hide()
-                self.volume_label.setText('')
                 self.one_minute_volume = 0
                 self.one_minute_volume_usd = 0
                 self.current_price = None
@@ -871,8 +899,7 @@ class KrakenTerminal(QMainWindow):
                 self.data_thread.data_signal.connect(self.update_ui)
                 self.data_thread.error_signal.connect(lambda: self.update_connection_status(False))
                 self.data_thread.start()
-
-                self.recent_trades_display.clear()
+                self.trades_window.clear()
                 self.recent_trades = []
 
                 position = get_user_position(self.exchange, symbol)
@@ -1032,7 +1059,8 @@ class KrakenTerminal(QMainWindow):
                     amount = f"{amount / 1000000:.2f}M"
                 trade_line = f"<font color='{color}'><b>{timestamp} | {format_price(trade['price']):<12} | {amount:<8} | ${usd_value:.2f}</b></font><br>"
                 trades_text += trade_line
-            self.recent_trades_display.setHtml(f"<pre>{trades_text}</pre>")
+
+            self.trades_window.update_trades(trades_text)
 
     def update_volume_display(self):
         current_time = time.time()
