@@ -259,6 +259,54 @@ class WebSocketThread(QThread):
                 self.last_book_update = current_time
 
 
+class OrdersDisplay(QWidget):
+    order_cancelled = pyqtSignal(str)  # Signal for order cancellation
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.layout = QVBoxLayout(self)
+        self.layout.setSpacing(2)
+        self.layout.setContentsMargins(0, 0, 0, 0)
+
+    def update_orders(self, orders):
+        for i in reversed(range(self.layout.count())):
+            self.layout.itemAt(i).widget().setParent(None)
+
+        if orders:
+            for order in orders:
+                order_widget = QWidget()
+                order_layout = QHBoxLayout(order_widget)
+                order_layout.setContentsMargins(0, 0, 0, 0)
+
+                side_color = 'green' if order['side'] == 'buy' else 'red'
+                text = f"<font color='{side_color}'>{order['side'].upper()}</font> | Size: {order['qty']} | Price: {format_price(order['limitPrice'])}"
+
+                order_label = QLabel(text)
+                order_label.setFont(QFont(GUI_FONT, GUI_FONT_SIZE))
+                order_label.setTextFormat(Qt.RichText)
+
+                cancel_button = QPushButton("❌")
+                cancel_button.setFixedSize(30, 30)
+                cancel_button.setStyleSheet("color: red;")
+
+                # Create a new function to avoid lambda capture issues
+                def create_cancel_handler(order_id):
+                    return lambda: self.order_cancelled.emit(order_id)
+
+                cancel_button.clicked.connect(create_cancel_handler(order['id']))
+
+                order_layout.addWidget(order_label)
+                order_layout.addWidget(cancel_button)
+                order_layout.addStretch()
+
+                self.layout.addWidget(order_widget)
+
+    def create_cancel_handler(self, order_id):
+        def handler():
+            print(f"Cancel button clicked for order: {order_id}")
+            self.order_cancelled.emit(order_id)
+        return handler
+
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -307,8 +355,6 @@ class SettingsDialog(QDialog):
         save_button.clicked.connect(self.save_and_close)
         layout.addWidget(save_button)
         self.setLayout(layout)
-
-
 
     def save_and_close(self):
         new_tickers = [input_field.text() for input_field in self.ticker_inputs]
@@ -405,7 +451,8 @@ class KrakenTerminal(QMainWindow):
         self.theme_button.setFixedSize(30, 30)
         self.theme_button.setFont(QFont(GUI_FONT, 12))
         self.theme_button.clicked.connect(self.toggle_theme)
-
+        self.orders_display = OrdersDisplay()
+        self.orders_display.order_cancelled.connect(self.cancel_specific_order)
         self.margin_requirement = None
 
         self.init_ui()
@@ -609,7 +656,7 @@ class KrakenTerminal(QMainWindow):
         data_layout.addWidget(self.order_separator)
 
         self.open_orders_label.setFont(QFont(GUI_FONT, GUI_FONT_SIZE))
-        data_layout.addWidget(self.open_orders_label)
+        data_layout.addWidget(self.orders_display)
 
         self.recent_trades_display = QTextEdit(self)
         self.recent_trades_display.setReadOnly(True)
@@ -681,6 +728,14 @@ class KrakenTerminal(QMainWindow):
 
         except ValueError:
             self.volume_input.setText(str(self.min_order_size * multiplier))
+
+    def cancel_specific_order(self, order_id):
+        print(f"Attempting to cancel order: {order_id}")
+        try:
+            self.exchange.cancel_order(order_id, get_full_symbol(self.pair_input.text()))
+            print(f"Order {order_id} cancelled successfully")
+        except Exception as e:
+            print(f"Error cancelling order: {str(e)}")
 
     def quick_swap_clicked(self, button_index):
         if self.quick_swap_buttons[button_index].text():
@@ -831,7 +886,7 @@ class KrakenTerminal(QMainWindow):
                 self.ws_thread.trade_signal.connect(self.update_recent_trades)
                 self.ws_thread.last_price_signal.connect(self.update_last_price)
                 self.ws_thread.book_signal.connect(self.update_ticker)
-                self.ws_thread.orders_signal.connect(self.update_open_orders_display)
+                self.ws_thread.orders_signal.connect(self.orders_display.update_orders)
                 self.ws_thread.index_signal.connect(self.update_index_price)
                 self.ws_thread.error_signal.connect(lambda: self.update_connection_status(False))
                 self.ws_thread.position_signal.connect(self.update_position_display)
@@ -885,25 +940,12 @@ class KrakenTerminal(QMainWindow):
         try:
             available_margin = data['available_margin']
             total_balance = data['total_balance']
-            self.balance_label.setText(f'Free Margin: ${available_margin:.2f} | Balance: ${total_balance:.2f}')
+            self.balance_label.setText(f'Margin: ${available_margin:.2f} | Balance: ${total_balance:.2f}')
             self.update_connection_status(True)
             self.update_usd_value()
         except Exception as e:
             print(f"Error in update_ui: {str(e)}")
 
-    def update_open_orders_display(self, orders):
-        if orders:
-            orders_text = "<b>Open Orders:</b><br>"
-            for order in orders:
-                side_color = 'green' if order['side'] == 'buy' else 'red'
-                orders_text += f"<font color='{side_color}'>{order['side'].upper()}</font> | Size: {order['qty']} | Price: {format_price(order['limitPrice'])}<br>"
-            self.open_orders_label.setText(orders_text)
-            self.open_orders_label.setTextFormat(Qt.RichText)
-            self.open_orders_label.show()
-            self.order_separator.show()
-        else:
-            self.open_orders_label.hide()
-            self.order_separator.hide()
 
     def update_position_display(self, data):
         if data is None:
