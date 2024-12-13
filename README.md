@@ -29,6 +29,7 @@ Changelog:
 - Added customizable data throttling for websockets
 - Added mid, best and market impact price to UPNL calculations
 - Added hotkeys
+- Added quick buttons for price and quantity
 
 ![image](https://github.com/user-attachments/assets/96871c60-1561-4eb6-8a90-cc44f5d14818)
 
