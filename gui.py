@@ -72,6 +72,7 @@ class WebSocketThread(QThread):
                 if order_id in self.open_orders:
                     del self.open_orders[order_id]
                     print(f"Order {order_id} removed. Reason: {reason}")
+
             elif order:
                 qty = float(order.get('qty', 0))
                 filled = float(order.get('filled', 0))
@@ -269,6 +270,7 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout()
 
         self.ticker_inputs = []
+
         for i, ticker in enumerate(settings.QUICK_SWAP_TICKERS):
             ticker_layout = QHBoxLayout()
             label = QLabel(f'Quick Swap {i + 1}:')
@@ -286,7 +288,6 @@ class SettingsDialog(QDialog):
         throttle_layout.addWidget(throttle_label)
         throttle_layout.addWidget(self.throttle_input)
         layout.addLayout(throttle_layout)
-
 
         hotkey_layout = QHBoxLayout()
         place_order_label = QLabel('Place Order Hotkey:')
@@ -331,14 +332,12 @@ class DataFetchThread(QThread):
     def run(self):
         while self.running:
             try:
-                position = get_user_position(self.exchange, self.symbol)
                 balance = self.exchange.fetch_balance()
                 flex_account = balance['info']['accounts']['flex']
                 available_margin = float(flex_account['availableMargin'])
                 total_balance = float(flex_account['balanceValue'])
 
                 self.data_signal.emit({
-                    'position': position,
                     'available_margin': available_margin,
                     'total_balance': total_balance
                 })
@@ -504,7 +503,6 @@ class KrakenTerminal(QMainWindow):
         self.market_price_button.clicked.connect(self.set_market_price)
         self.price_button.clicked.connect(self.set_price_input)
 
-        # Create main price button layout
         price_layout = QHBoxLayout()
         price_layout.addWidget(self.best_price_button)
         price_layout.addWidget(self.mid_price_button)
@@ -512,11 +510,10 @@ class KrakenTerminal(QMainWindow):
         price_layout.addWidget(self.price_button)
         order_layout.addLayout(price_layout)
 
-        # Create separate container for price input and tick buttons
         self.price_input_container = QWidget()
         price_input_layout = QHBoxLayout(self.price_input_container)
-        price_input_layout.setSpacing(2)  # Reduce spacing between elements
-        price_input_layout.setContentsMargins(0, 0, 0, 0)  # Remove margins
+        price_input_layout.setSpacing(2)
+        price_input_layout.setContentsMargins(0, 0, 0, 0)
         price_input_layout.addWidget(self.tick_1_button)
         price_input_layout.addWidget(self.tick_2_button)
         price_input_layout.addWidget(self.tick_5_button)
@@ -589,8 +586,9 @@ class KrakenTerminal(QMainWindow):
         for label in [self.last_price_label, self.bid_label, self.mid_label, self.ask_label,
                       self.spread_label, self.index_price_label]:
             label.setFont(QFont(GUI_FONT, GUI_FONT_SIZE))
+            label.setMinimumWidth(50)
+            label.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
             data_layout.addWidget(label)
-
         self.volume_label.setFont(QFont(GUI_FONT, GUI_FONT_SIZE))
         data_layout.addWidget(self.volume_label)
 
@@ -1043,9 +1041,12 @@ class KrakenTerminal(QMainWindow):
         self.update_usd_value()
 
     def update_index_price(self, index_price):
-        bid = float(self.bid_label.text().split(': ')[1]) if self.bid_label.text() else 0
-        ask = float(self.ask_label.text().split(': ')[1]) if self.ask_label.text() else 0
-        mid_price = (bid + ask) / 2 if bid and ask else 0
+        if not self.bid_label.text() or not self.ask_label.text():
+            return
+
+        bid = float(self.bid_label.text().split(': ')[1])
+        ask = float(self.ask_label.text().split(': ')[1])
+        mid_price = (bid + ask) / 2
 
         premium = mid_price - index_price if mid_price else 0
         premium_percentage = (premium / index_price) * 100 if index_price else 0
@@ -1123,7 +1124,6 @@ class KrakenTerminal(QMainWindow):
         self.mid_price_button.setStyleSheet('')
         self.market_price_button.setStyleSheet('')
 
-        # Show price input and tick buttons
         self.price_input_container.show()
         self.price_input.show()
 
@@ -1150,6 +1150,19 @@ class KrakenTerminal(QMainWindow):
 
     def update_selected_price(self):
         try:
+            entered_price = float(self.price_input.text())
+            bid = float(self.bid_label.text().split(': ')[1])
+            ask = float(self.ask_label.text().split(': ')[1])
+
+            if self.order_type == 'buy':
+                max_price = ask - self.tick_size
+                if entered_price > max_price:
+                    self.price_input.setText(format_price(max_price))
+            elif self.order_type == 'sell':
+                min_price = bid + self.tick_size
+                if entered_price < min_price:
+                    self.price_input.setText(format_price(min_price))
+
             self.selected_price = float(self.price_input.text())
             self.update_usd_value()
         except ValueError:
