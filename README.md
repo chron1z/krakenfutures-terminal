@@ -1,39 +1,57 @@
-# krakenfutures-terminal
-A lightweight, real-time trading terminal for Kraken Futures.
+# KrakenFutures Terminal 
 
-Features:
+A high-performance, real-time trading terminal for Kraken Futures built with Python.
 
-- Low memory, lightweight application (~25MB compared to ~700MB for Kraken's web terminal)
-- Real-time WebSocket price, order and position data (significantly faster than Kraken's web terminal)
-- Unrealized P&L tracking with best/mid price, market order price impact calculation
-- Smart price selection: best price/mid price 
-- Instant market close position with one-click market orders
-- Hotkeys for order placement/cancellation
+## Key Features
+
+### Performance
+- Lightweight application (~25MB vs ~700MB for Kraken's web terminal)
+- Real-time WebSocket data streaming
+- Fast execution and responsive UI
+
+### Trading Tools
+- Smart price selection (best/mid price)
+- One-click market close position
+- Bulk order cancellation
+- Customizable hotkeys
+- Real-time P&L tracking with:
+  - Best price
+  - Mid price
+  - Market impact calculation
+
+### Market Data
 - 1-minute volume tracking
 - Recent trades display
-- Bulk order cancellation
+- Real-time orderbook
 - Connection status indicator
-- Dark mode theme
 
-Using ccxt for exchange connectivity, PyQt5 for user interface
+### UI/UX
+- Dark/Light theme
+- Customizable quick-swap tickers
+- Adjustable data throttling
 
-Usage:
-- Add API credentials to settings.py and set font size as desired for your screen size
-- Run main.py
+## Technology Stack
+- Python
+- ccxt for exchange connectivity
+- PyQt5 for user interface
+- WebSocket for real-time data
 
-Changelog:
-- Added dark-mode theme
-- Added balance, available margin and required margin
-- Added ARM button
-- Added customizable ticker quick-swap bar
-- Added customizable data throttling for websockets
-- Added mid, best and market impact price to UPNL calculations
-- Added hotkeys
-- Added quick buttons for price and quantity
+## Getting Started
 
-![image](https://github.com/user-attachments/assets/96871c60-1561-4eb6-8a90-cc44f5d14818)
+1. Configure API credentials in settings.py
+2. Adjust font size for your display
+3. Run main.py
 
-DISCLAIMER:
-This software is for informational purposes only. Use at your own risk. 
-The authors and contributors are not responsible for any trading losses, damages or other issues that may occur when using this terminal.
+## Recent Updates
+- Added dark mode theme
+- Implemented balance and margin tracking
+- Added ARM safety button
+- Introduced customizable ticker quick-swap
+- Enhanced UPNL calculations (market price impact)
+- Added configurable hotkeys
+- Improved price/quantity input controls
 
+![Terminal Screenshot](https://github.com/user-attachments/assets/96871c60-1561-4eb6-8a90-cc44f5d14818)
+
+## Disclaimer
+This software is for informational purposes only. Use at your own risk. The authors and contributors assume no responsibility for trading losses or other damages.
