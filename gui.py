@@ -1,11 +1,13 @@
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QLabel, QTextEdit, \
-    QFrame, QDialog,QSizePolicy, QShortcut
+    QFrame, QDialog,QSizePolicy, QShortcut, QGridLayout
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer
 from PyQt5.QtGui import QFont, QKeySequence
 import ccxt
 import traceback
 from settings import (KRAKEN_API_KEY, KRAKEN_API_SECRET, GUI_FONT, GUI_FONT_SIZE, QUICK_SWAP_TICKERS,
-                      save_settings, BOOK_UPDATE_THROTTLE, PLACE_ORDER_HOTKEY, CLOSE_ORDERS_HOTKEY)
+                      save_settings, BOOK_UPDATE_THROTTLE, PLACE_ORDER_HOTKEY, CLOSE_ORDERS_HOTKEY,
+                      CLOSE_LAST_ORDER_HOTKEY, BUY_HOTKEY, SELL_HOTKEY, BEST_PRICE_HOTKEY, PRICE_INPUT_HOTKEY,
+                      MARKET_PRICE_HOTKEY, MID_PRICE_HOTKEY)
 from helpers import format_price, round_to_tick, calculate_adjusted_mid, get_full_symbol, get_user_position, \
     get_open_orders
 from datetime import datetime
@@ -269,7 +271,7 @@ class RecentTradesWindow(QWidget):
         self.trades_display.setFont(QFont(GUI_FONT, GUI_FONT_SIZE))
         self.trades_display.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         layout.addWidget(self.trades_display)
-        self.resize(600, 400)
+        self.resize(850, 360)
 
     def update_trades(self, trades_text):
         self.trades_display.setHtml(f"<pre>{trades_text}</pre>")
@@ -363,10 +365,44 @@ class SettingsDialog(QDialog):
         self.close_orders_input = QLineEdit()
         self.close_orders_input.setText(settings.CLOSE_ORDERS_HOTKEY)
 
+        close_last_order_label = QLabel('Close Last Order Hotkey:')
+        self.close_last_order_input = QLineEdit()
+        self.close_last_order_input.setText(settings.CLOSE_LAST_ORDER_HOTKEY)
+
         hotkey_layout.addWidget(place_order_label)
         hotkey_layout.addWidget(self.place_order_input)
         hotkey_layout.addWidget(close_orders_label)
         hotkey_layout.addWidget(self.close_orders_input)
+        hotkey_layout.addWidget(close_last_order_label)
+        hotkey_layout.addWidget(self.close_last_order_input)
+
+        order_hotkeys_layout = QGridLayout()
+        order_hotkeys_layout.addWidget(QLabel('Buy Hotkey:'), 0, 0)
+        self.buy_hotkey_input = QLineEdit(settings.BUY_HOTKEY)
+        order_hotkeys_layout.addWidget(self.buy_hotkey_input, 0, 1)
+
+        order_hotkeys_layout.addWidget(QLabel('Sell Hotkey:'), 1, 0)
+        self.sell_hotkey_input = QLineEdit(settings.SELL_HOTKEY)
+        order_hotkeys_layout.addWidget(self.sell_hotkey_input, 1, 1)
+
+        order_hotkeys_layout.addWidget(QLabel('Best Price Hotkey:'), 2, 0)
+        self.best_price_hotkey_input = QLineEdit(settings.BEST_PRICE_HOTKEY)
+        order_hotkeys_layout.addWidget(self.best_price_hotkey_input, 2, 1)
+
+        order_hotkeys_layout.addWidget(QLabel('Mid Price Hotkey:'), 3, 0)
+        self.mid_price_hotkey_input = QLineEdit(settings.MID_PRICE_HOTKEY)
+        order_hotkeys_layout.addWidget(self.mid_price_hotkey_input, 3, 1)
+
+        order_hotkeys_layout.addWidget(QLabel('Market Price Hotkey:'), 4, 0)
+        self.market_price_hotkey_input = QLineEdit(settings.MARKET_PRICE_HOTKEY)
+        order_hotkeys_layout.addWidget(self.market_price_hotkey_input, 4, 1)
+
+        order_hotkeys_layout.addWidget(QLabel('Custom Price Hotkey:'), 5, 0)
+        self.price_input_hotkey_input = QLineEdit(settings.PRICE_INPUT_HOTKEY)
+        order_hotkeys_layout.addWidget(self.price_input_hotkey_input, 5, 1)
+
+        layout.addLayout(order_hotkeys_layout)
+
         layout.addLayout(hotkey_layout)
         save_button = QPushButton('Save')
         save_button.clicked.connect(self.save_and_close)
@@ -380,6 +416,7 @@ class SettingsDialog(QDialog):
         save_settings('BOOK_UPDATE_THROTTLE', int(new_throttle))
         save_settings('PLACE_ORDER_HOTKEY', self.place_order_input.text())
         save_settings('CLOSE_ORDERS_HOTKEY', self.close_orders_input.text())
+        save_settings('CLOSE_LAST_ORDER_HOTKEY', self.close_last_order_input.text())
         self.accept()
 
 class DataFetchThread(QThread):
@@ -476,8 +513,7 @@ class KrakenTerminal(QMainWindow):
         self.trades_button.setFont(QFont(GUI_FONT, 14))
         self.trades_button.clicked.connect(self.toggle_trades_window)
         self.last_price_label.setText('Last: waiting for data')
-        self.volume_label.setText('1M VOL: waiting for data')
-
+        self.volume_label.setText('1m vol: waiting for data')
         self.init_ui()
 
     def mousePressEvent(self, event):
@@ -643,9 +679,14 @@ class KrakenTerminal(QMainWindow):
         order_layout.addWidget(self.place_order_button)
         hidden_layout.addLayout(order_layout)
 
+        close_buttons_layout = QHBoxLayout()
         self.close_orders_button = QPushButton('Close All Orders', font=default_font)
         self.close_orders_button.clicked.connect(self.close_all_orders)
-        hidden_layout.addWidget(self.close_orders_button)
+        self.close_last_order_button = QPushButton('Close Last Order', font=default_font)
+        self.close_last_order_button.clicked.connect(self.close_last_order)
+        close_buttons_layout.addWidget(self.close_orders_button)
+        close_buttons_layout.addWidget(self.close_last_order_button)
+        hidden_layout.addLayout(close_buttons_layout)
 
         self.fast_exit_button = QPushButton('Market Close Position', font=default_font)
         self.fast_exit_button.clicked.connect(self.fast_exit)
@@ -699,10 +740,40 @@ class KrakenTerminal(QMainWindow):
         bottom_layout.addWidget(self.trades_button)
 
         self.place_order_shortcut = QShortcut(QKeySequence(PLACE_ORDER_HOTKEY), self)
-        self.place_order_shortcut.activated.connect(lambda: self.place_order() if self.is_armed else None)
+        self.place_order_shortcut.activated.connect(
+            lambda: self.place_order() if self.ws_thread and self.is_armed else None)
 
         self.close_orders_shortcut = QShortcut(QKeySequence(CLOSE_ORDERS_HOTKEY), self)
-        self.close_orders_shortcut.activated.connect(lambda: self.close_all_orders() if self.is_armed else None)
+        self.close_orders_shortcut.activated.connect(
+            lambda: self.close_all_orders() if self.ws_thread and self.is_armed else None)
+
+        self.close_last_order_shortcut = QShortcut(QKeySequence(CLOSE_LAST_ORDER_HOTKEY), self)
+        self.close_last_order_shortcut.activated.connect(
+            lambda: self.close_last_order() if self.ws_thread and self.is_armed else None)
+
+        self.buy_shortcut = QShortcut(QKeySequence("Alt+1"), self)
+        self.buy_shortcut.activated.connect(
+            lambda: self.set_order_type('buy') if self.ws_thread else None)
+
+        self.sell_shortcut = QShortcut(QKeySequence("Alt+2"), self)
+        self.sell_shortcut.activated.connect(
+            lambda: self.set_order_type('sell') if self.ws_thread else None)
+
+        self.best_price_shortcut = QShortcut(QKeySequence("Shift+1"), self)
+        self.best_price_shortcut.activated.connect(
+            lambda: self.set_best_price() if self.ws_thread and self.order_type else None)
+
+        self.mid_price_shortcut = QShortcut(QKeySequence("Shift+2"), self)
+        self.mid_price_shortcut.activated.connect(
+            lambda: self.set_mid_price() if self.ws_thread and self.order_type else None)
+
+        self.market_price_shortcut = QShortcut(QKeySequence("Shift+3"), self)
+        self.market_price_shortcut.activated.connect(
+            lambda: self.set_market_price() if self.ws_thread and self.order_type else None)
+
+        self.price_input_shortcut = QShortcut(QKeySequence("Shift+4"), self)
+        self.price_input_shortcut.activated.connect(
+            lambda: self.set_price_input() if self.ws_thread and self.order_type else None)
 
         self.arm_button = QPushButton('ARM')
         self.arm_button.setFixedSize(120, 30)
@@ -723,10 +794,23 @@ class KrakenTerminal(QMainWindow):
         self.place_order_button.setEnabled(False)
         self.close_orders_button.setEnabled(False)
         self.fast_exit_button.setEnabled(False)
+        self.close_last_order_button.setEnabled(False)
+        self.close_last_order_button.setStyleSheet('background-color: #1a1a1a')
         self.place_order_button.setStyleSheet('background-color: #1a1a1a')
         self.close_orders_button.setStyleSheet('background-color: #1a1a1a')
         self.fast_exit_button.setStyleSheet('background-color: #1a1a1a')
 
+    def close_last_order(self):
+        print('Attempting to close last order.')
+
+        try:
+            orders = list(self.ws_thread.open_orders.values())
+            if orders:
+                last_order = orders[-1]
+                self.exchange.cancel_order(last_order['id'], get_full_symbol(self.pair_input.text()))
+                print(f"Last order {last_order['id']} has been closed.")
+        except Exception as e:
+            print(f"Error closing last order: {str(e)}")
     def toggle_trades_window(self):
         if self.trades_window.isVisible():
             self.trades_window.hide()
@@ -869,7 +953,7 @@ class KrakenTerminal(QMainWindow):
                 self.mid_label.setText('')
                 self.spread_label.setText('')
                 self.index_price_label.setText('')
-                self.volume_label.setText('1M VOL: waiting...')
+                self.volume_label.setText('1m vol: waiting...')
                 self.position_label.hide()
                 self.separator.hide()
                 self.order_separator.hide()
@@ -1029,6 +1113,13 @@ class KrakenTerminal(QMainWindow):
         except Exception as e:
             print(f"Error in update_position_display: {str(e)}")
 
+    def format_volume_usd(self, volume_usd):
+        if volume_usd >= 1000000:
+            return f"${volume_usd / 1000000:.2f}M"
+        elif volume_usd >= 1000:
+            return f"${volume_usd / 1000:.2f}K"
+        return f"${volume_usd:.2f}"
+
     def update_recent_trades(self, trade):
         current_time = time.time()
         if trade['amount'] > 0 and trade['price'] > 0:
@@ -1046,9 +1137,9 @@ class KrakenTerminal(QMainWindow):
             sell_percentage = (sell_volume / volume * 100) if volume > 0 else 0
 
             volume_display = f"{volume / 1000000:.2f}M" if volume >= 1000000 else f"{volume:.4f}"
+            formatted_usd = self.format_volume_usd(volume_usd)
             self.volume_label.setText(
-                f"1M VOL: {volume_display} | ${volume_usd:.2f} (<font color='green'>{buy_percentage:.1f}%</font> / <font color='red'>{sell_percentage:.1f}%</font>)")
-
+                f"1M VOL: {volume_display} | {formatted_usd} (<font color='green'>{buy_percentage:.1f}%</font> / <font color='red'>{sell_percentage:.1f}%</font>)")
             trades_text = ""
             for _, trade in reversed(list(self.recent_trades)[-10:]):
                 timestamp = datetime.fromtimestamp(trade['time'] / 1000).strftime('%H:%M:%S')
@@ -1301,15 +1392,18 @@ class KrakenTerminal(QMainWindow):
 
             self.place_order_button.setEnabled(self.is_armed)
             self.close_orders_button.setEnabled(self.is_armed)
+            self.close_last_order_button.setEnabled(self.is_armed)
             self.fast_exit_button.setEnabled(self.is_armed)
 
             if not self.is_armed:
                 self.place_order_button.setStyleSheet('background-color: #1a1a1a')
                 self.close_orders_button.setStyleSheet('background-color: #1a1a1a')
+                self.close_last_order_button.setStyleSheet('background-color: #1a1a1a')
                 self.fast_exit_button.setStyleSheet('background-color: #1a1a1a')
             else:
                 self.place_order_button.setStyleSheet('')
                 self.close_orders_button.setStyleSheet('')
+                self.close_last_order_button.setStyleSheet('')
                 self.fast_exit_button.setStyleSheet('')
 
         except Exception as e:
@@ -1361,9 +1455,10 @@ class KrakenTerminal(QMainWindow):
 
     def close_all_orders(self):
         try:
-            open_orders = get_open_orders(self.exchange, get_full_symbol(self.pair_input.text()))
-            for order in open_orders:
+            orders = list(self.ws_thread.open_orders.values())
+            for order in orders:
                 self.exchange.cancel_order(order['id'], get_full_symbol(self.pair_input.text()))
+                print(f"Order {order['id']} cancelled")
             print("All open orders have been closed.")
         except Exception as e:
             print(f"Error closing orders: {str(e)}")
