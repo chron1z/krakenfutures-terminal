@@ -6,6 +6,13 @@ QUICK_SWAP_TICKERS = ['XBT', 'ETH', 'SOL', 'BONK', 'CRV']
 BOOK_UPDATE_THROTTLE = '0'
 PLACE_ORDER_HOTKEY = "Ctrl+1"
 CLOSE_ORDERS_HOTKEY = "Ctrl+2"
+CLOSE_LAST_ORDER_HOTKEY = 'Ctrl+3'
+BUY_HOTKEY = 'Alt+1'
+SELL_HOTKEY = 'Alt+2'
+BEST_PRICE_HOTKEY = 'Shift+1'
+MID_PRICE_HOTKEY = 'Shift+2'
+MARKET_PRICE_HOTKEY = 'Shift+3'
+PRICE_INPUT_HOTKEY = 'Shift+4'
 
 
 def save_settings(setting_name, value):
