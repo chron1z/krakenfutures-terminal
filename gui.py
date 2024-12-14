@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QLineEdit, QLabel, QTextEdit, \
     QFrame, QDialog,QSizePolicy, QShortcut, QGridLayout
 from PyQt5.QtCore import QThread, pyqtSignal, Qt, QTimer
-from PyQt5.QtGui import QFont, QKeySequence
+from PyQt5.QtGui import QFont, QKeySequence, QDoubleValidator
 import ccxt
 import traceback
 from settings import (KRAKEN_API_KEY, KRAKEN_API_SECRET, GUI_FONT, GUI_FONT_SIZE, QUICK_SWAP_TICKERS,
@@ -516,6 +516,7 @@ class KrakenTerminal(QMainWindow):
         self.volume_label.setText('1m vol: waiting for data')
         self.init_ui()
 
+
     def mousePressEvent(self, event):
         self.setFocus()
 
@@ -526,6 +527,9 @@ class KrakenTerminal(QMainWindow):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
         self.main_layout = QVBoxLayout(central_widget)
+
+        numeric_validator = QDoubleValidator()
+        numeric_validator.setNotation(QDoubleValidator.StandardNotation)
 
         default_font = QFont(GUI_FONT, GUI_FONT_SIZE)
 
@@ -637,6 +641,11 @@ class KrakenTerminal(QMainWindow):
         self.volume_input.setMinimumWidth(300)
         self.volume_input.textChanged.connect(self.update_usd_value)
         self.volume_input.editingFinished.connect(self.enforce_min_size_multiple)
+        self.volume_input.editingFinished.connect(self.validate_volume_input)
+        self.price_input.editingFinished.connect(self.validate_price_input)
+
+        self.volume_input.setValidator(numeric_validator)
+        self.price_input.setValidator(numeric_validator)
 
         self.qty_1_button = QPushButton('1', font=QFont(GUI_FONT, GUI_FONT_SIZE - 4))
         self.qty_10_button = QPushButton('10', font=QFont(GUI_FONT, GUI_FONT_SIZE - 4))
@@ -799,6 +808,22 @@ class KrakenTerminal(QMainWindow):
         self.place_order_button.setStyleSheet('background-color: #1a1a1a')
         self.close_orders_button.setStyleSheet('background-color: #1a1a1a')
         self.fast_exit_button.setStyleSheet('background-color: #1a1a1a')
+
+    def validate_volume_input(self):
+        try:
+            value = float(self.volume_input.text() or 0)
+            if value <= 0:
+                self.volume_input.setText('')
+        except ValueError:
+            self.volume_input.setText('')
+
+    def validate_price_input(self):
+        try:
+            value = float(self.price_input.text() or 0)
+            if value <= 0:
+                self.price_input.setText('')
+        except ValueError:
+            self.price_input.setText('')
 
     def close_last_order(self):
         print('Attempting to close last order.')
@@ -1059,6 +1084,8 @@ class KrakenTerminal(QMainWindow):
 
 
     def update_position_display(self, data):
+        self.current_position = data
+
         if data is None:
             self.position_label.hide()
             self.separator.hide()
@@ -1198,6 +1225,8 @@ class KrakenTerminal(QMainWindow):
         self.mid_label.setText(f'Mid: {format_price(mid)}')
         self.spread_label.setText(f'Spread: {format_price(spread)} ({spread_percentage:.2f}%)')
         self.orderbook = self.ws_thread.orderbook
+
+        self.update_position_display(self.current_position)
 
         self.update_usd_value()
 
