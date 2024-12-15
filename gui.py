@@ -165,13 +165,18 @@ class WebSocketThread(QThread):
                     self.handle_order_update(data)
 
                 elif data.get('feed') in ['open_positions', 'open_positions_snapshot']:
-                    if len(data.get('positions', [])) > 0:
-                        position = data['positions'][0]
+                    positions = data.get('positions', [])
+                    current_symbol_position = next(
+                        (pos for pos in positions if pos.get('instrument') == self.symbol),
+                        None
+                    )
+                    if current_symbol_position:
                         position_data = {
-                            'entryPrice': position['entry_price'],
-                            'contracts': position['balance'],
+                            'entryPrice': current_symbol_position['entry_price'],
+                            'contracts': current_symbol_position['balance'],
+                            'symbol': self.symbol,
                             'info': {
-                                'side': 'LONG' if position['balance'] > 0 else 'SHORT'
+                                'side': 'LONG' if float(current_symbol_position['balance']) > 0 else 'SHORT'
                             }
                         }
                         self.position_signal.emit(position_data)
@@ -1122,11 +1127,11 @@ class KrakenTerminal(QMainWindow):
                 position_color = 'green' if position_type == "LONG" else 'red'
 
                 position_text = (
-                    f"Position: {position_type} | Entry: {format_price(entry_price)} | "
-                    f"Quantity: <font color='{position_color}'>{quantity}</font> | Value: ${format_price(entry_price * quantity)}<br>"
-                    f"UPNL: MID <font color='{mid_color}'>${format_price(abs(mid_pnl))} ({mid_percentage:.2f}%)</font> | "
-                    f"BEST <font color='{best_color}'>${format_price(abs(best_pnl))} ({best_percentage:.2f}%)</font> | "
-                    f"MARKET <font color='{impact_color}'>${format_price(abs(impact_pnl))} ({impact_percentage:.2f}%)</font>"
+                    f"{position_type} | {format_price(entry_price)} | "
+                    f"<font color='{position_color}'>{quantity}</font> | ${(entry_price * quantity):.2f}<br>"
+                    f"MID <font color='{mid_color}'>${abs(mid_pnl):.2f} ({mid_percentage:.2f}%)</font> | "
+                    f"BEST <font color='{best_color}'>${abs(best_pnl):.2f} ({best_percentage:.2f}%)</font> | "
+                    f"MARKET <font color='{impact_color}'>${abs(impact_pnl):.2f} ({impact_percentage:.2f}%)</font>"
                 )
 
                 self.position_label.setText(position_text)
@@ -1226,7 +1231,9 @@ class KrakenTerminal(QMainWindow):
         self.spread_label.setText(f'Spread: {format_price(spread)} ({spread_percentage:.2f}%)')
         self.orderbook = self.ws_thread.orderbook
 
-        self.update_position_display(self.current_position)
+        # Update UPNL with current symbol's bid/ask
+        if hasattr(self, 'current_position') and self.current_position:
+            self.update_position_display(self.current_position)
 
         self.update_usd_value()
 
