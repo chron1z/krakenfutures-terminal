@@ -680,6 +680,18 @@ class KrakenTerminal(QMainWindow):
         quantity_layout.addWidget(self.volume_input)
         quantity_layout.addWidget(self.clear_qty_button)
 
+        self.pos_20_button = QPushButton('20%', font=default_font)
+        self.pos_33_button = QPushButton('33%', font=default_font)
+        self.pos_50_button = QPushButton('50%', font=default_font)
+
+        self.pos_20_button.clicked.connect(lambda: self.set_position_percentage(0.20))
+        self.pos_33_button.clicked.connect(lambda: self.set_position_percentage(0.33))
+        self.pos_50_button.clicked.connect(lambda: self.set_position_percentage(0.50))
+
+        quantity_layout.addWidget(self.pos_20_button)
+        quantity_layout.addWidget(self.pos_33_button)
+        quantity_layout.addWidget(self.pos_50_button)
+
         self.pos_button = QPushButton('pos', font=default_font)
         self.pos_button.clicked.connect(self.copy_position_size)
         self.pos_button.hide()
@@ -813,6 +825,16 @@ class KrakenTerminal(QMainWindow):
         self.place_order_button.setStyleSheet('background-color: #1a1a1a')
         self.close_orders_button.setStyleSheet('background-color: #1a1a1a')
         self.fast_exit_button.setStyleSheet('background-color: #1a1a1a')
+
+    def set_position_percentage(self, percentage):
+        try:
+            if hasattr(self, 'current_position') and self.current_position:
+                quantity = abs(float(self.current_position['contracts']))
+                partial_quantity = quantity * percentage
+                adjusted_quantity = round(partial_quantity / self.min_order_size) * self.min_order_size
+                self.volume_input.setText(str(adjusted_quantity))
+        except Exception as e:
+            print(f"Error setting position percentage: {str(e)}")
 
     def validate_volume_input(self):
         try:
@@ -1095,6 +1117,9 @@ class KrakenTerminal(QMainWindow):
             self.position_label.hide()
             self.separator.hide()
             self.pos_button.hide()
+            self.pos_20_button.hide()
+            self.pos_33_button.hide()
+            self.pos_50_button.hide()
             return
         try:
             if data and 'entryPrice' in data:
@@ -1138,10 +1163,17 @@ class KrakenTerminal(QMainWindow):
                 self.position_label.show()
                 self.separator.show()
                 self.pos_button.show()
+                self.pos_20_button.show()
+                self.pos_33_button.show()
+                self.pos_50_button.show()
             else:
                 self.position_label.hide()
                 self.separator.hide()
                 self.pos_button.hide()
+                self.pos_20_button.hide()
+                self.pos_33_button.hide()
+                self.pos_50_button.hide()
+
         except Exception as e:
             print(f"Error in update_position_display: {str(e)}")
 
