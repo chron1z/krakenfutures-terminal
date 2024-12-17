@@ -436,6 +436,8 @@ class SettingsDialog(QDialog):
         save_settings('CLOSE_LAST_ORDER_HOTKEY', self.close_last_order_input.text())
         save_settings('KRAKEN_API_KEY', self.api_key_input.text())
         save_settings('KRAKEN_API_SECRET', self.api_secret_input.text())
+        self.parent().exchange.apiKey = self.api_key_input.text()
+        self.parent().exchange.secret = self.api_secret_input.text()
         self.accept()
 
 class DataFetchThread(QThread):
