@@ -408,6 +408,18 @@ class SettingsDialog(QDialog):
 
         layout.addLayout(order_hotkeys_layout)
 
+        api_layout = QGridLayout()
+        api_layout.addWidget(QLabel('API Key:'), 0, 0)
+        self.api_key_input = QLineEdit(settings.KRAKEN_API_KEY)
+        api_layout.addWidget(self.api_key_input, 0, 1)
+
+        api_layout.addWidget(QLabel('API Secret:'), 1, 0)
+        self.api_secret_input = QLineEdit(settings.KRAKEN_API_SECRET)
+        self.api_secret_input.setEchoMode(QLineEdit.Password)
+        api_layout.addWidget(self.api_secret_input, 1, 1)
+
+        layout.addLayout(api_layout)
+
         layout.addLayout(hotkey_layout)
         save_button = QPushButton('Save')
         save_button.clicked.connect(self.save_and_close)
@@ -422,6 +434,8 @@ class SettingsDialog(QDialog):
         save_settings('PLACE_ORDER_HOTKEY', self.place_order_input.text())
         save_settings('CLOSE_ORDERS_HOTKEY', self.close_orders_input.text())
         save_settings('CLOSE_LAST_ORDER_HOTKEY', self.close_last_order_input.text())
+        save_settings('KRAKEN_API_KEY', self.api_key_input.text())
+        save_settings('KRAKEN_API_SECRET', self.api_secret_input.text())
         self.accept()
 
 class DataFetchThread(QThread):
